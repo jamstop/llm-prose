@@ -58,6 +58,29 @@ Dashboard → Settings → Plugins → Team Marketplaces → Import from Repo. R
 
 Copy `skills/` and `commands/` into the tool's directories (`.cursor/`, `.claude/`, …). Copy the skills alongside the commands — the commands delegate to skills by name.
 
+## Local dev & auto-update
+
+This machine consumes the plugin by symlinking the local Cursor plugin dir at the git checkout, so there's one source of truth that tracks `origin/main`:
+
+```bash
+ln -sfn /path/to/llm-prose ~/.cursor/plugins/local/llm-prose
+```
+
+`scripts/update.sh` does a safe `--ff-only` pull (no-ops on a dirty/diverged tree). A launchd agent (`~/Library/LaunchAgents/com.jamstop.llm-prose-update.plist`) runs it at login and every 30 min, so the checkout stays current with the remote. Cursor loads plugin files on window reload/restart, so reload to pick up a pull mid-session.
+
+Remove auto-update with: `launchctl unload ~/Library/LaunchAgents/com.jamstop.llm-prose-update.plist`.
+
+## Tests
+
+`scripts/validate.sh` (bash + jq, no other deps) checks the structural failure modes that actually break a plugin:
+
+- manifests are valid JSON and agree on the plugin `name`
+- every skill/command/rule has the required frontmatter
+- each skill's declared `name` matches its directory
+- **delegation integrity** — every `` `skill-name` `` a command delegates to exists as a real skill
+
+Run `bash scripts/validate.sh`. CI (`.github/workflows/validate.yml`) runs it on every push and PR, so the remote can't go broken before you pull it. Behavioral quality (does a review *read* well) isn't auto-tested — that's an LLM eval, out of scope for now.
+
 ## Components
 
 - **`skills/review-prose`** — context-aware entry point; auto-activates. Detects git/PR context and runs both passes against the right target.
