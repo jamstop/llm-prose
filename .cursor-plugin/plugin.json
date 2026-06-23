@@ -1,0 +1,10 @@
+{
+  "name": "pr-review",
+  "version": "0.1.0",
+  "description": "Reviewer for LLM-authored PRs: strips bloated/AI-residue comments and rewrites weak PR descriptions (What/Why/How + interface changes).",
+  "author": {
+    "name": "jamstop"
+  },
+  "keywords": ["pr-review", "code-review", "comments", "documentation", "pull-request", "llm"],
+  "license": "MIT"
+}
