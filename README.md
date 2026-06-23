@@ -54,6 +54,17 @@ Dashboard → Settings → Plugins → Team Marketplaces → Import from Repo. R
 /plugin install llm-prose@llm-prose
 ```
 
+### Cursor CLI (`cursor-agent`)
+
+The CLI loads a local plugin with `--plugin-dir`, so skills and commands work headlessly:
+
+```bash
+cursor-agent --plugin-dir ~/.cursor/plugins/local/llm-prose \
+  -p "use the comment-bloat-review skill to review the comments on this branch"
+```
+
+Drop `--plugin-dir` into any agent invocation, alias it, or point it at the checkout directly. `-p` is non-interactive (good for scripts/CI); add `--output-format json` to parse results.
+
 ### Any project, any tool
 
 Copy `skills/` and `commands/` into the tool's directories (`.cursor/`, `.claude/`, …). Copy the skills alongside the commands — the commands delegate to skills by name.
@@ -79,7 +90,17 @@ Remove auto-update with: `launchctl unload ~/Library/LaunchAgents/com.jamstop.ll
 - each skill's declared `name` matches its directory
 - **delegation integrity** — every `` `skill-name` `` a command delegates to exists as a real skill
 
-Run `bash scripts/validate.sh`. CI (`.github/workflows/validate.yml`) runs it on every push and PR, so the remote can't go broken before you pull it. Behavioral quality (does a review *read* well) isn't auto-tested — that's an LLM eval, out of scope for now.
+Run `bash scripts/validate.sh`. CI (`.github/workflows/validate.yml`) runs it on every push and PR, so the remote can't go broken before you pull it.
+
+**Behavioral eval** (`eval/run.sh`) — drives the real `comment-bloat-review` skill through the Cursor CLI against `eval/fixtures/sample.py`, which has comments tagged with sentinels: `CMT_B*` are planted bloat that must be flagged, `CMT_K*` are comments that must be kept. It scores recall (all bloat caught) and precision (no good comments flagged):
+
+```bash
+bash eval/run.sh              # one run, default model
+RUNS=5 bash eval/run.sh       # repeat to gauge flakiness
+MODEL=sonnet-4-thinking bash eval/run.sh
+```
+
+This is an LLM eval, so treat it as a smoke test, not a hard gate — it needs CLI auth and network, which is why it's not in CI. Add fixtures as you find comment patterns the skill mishandles.
 
 ## Components
 
