@@ -1,43 +1,47 @@
 # llm-prose
 
-A plugin for reviewing the **prose layer** of LLM-authored changes — the comments and the PR description — not the code's correctness. It does the two cleanup passes that are easy to forget and tedious by hand:
+A plugin that reviews the **prose layer** of LLM-authored changes — the *comments* in your diff and the *PR description* — not the code's correctness. It does the two cleanup passes that are easy to forget and tedious by hand, and ships a rule that keeps the agent from creating the mess in the first place.
 
-1. **Comment bloat** — flags redundant narration, LLM-residue comments (the model's notes-to-self), over-documentation, stale/commented-out code, and proposes tighter edits. Keeps only comments that explain intent a human needs.
-2. **Description quality** — checks a PR description against the real diff and rewrites it to cover **What / Why / How** and surface **interface/breaking changes**. It never invents the *Why*; if the motivation isn't discoverable it asks or leaves a placeholder.
+Works in **Cursor** and **Claude Code**, on a GitHub PR (via `gh`) or a plain local/branch diff.
 
-It also ships a write-time **rule** that nudges the agent to avoid comment bloat in the first place, so review is a backstop rather than the only defense.
+## Ethos
 
-Works on a GitHub PR (via `gh`) or a local/branch diff.
+LLMs write code well and write *about* code badly. They leave their working memory in comments, over-document the obvious, and ship PR descriptions that list files instead of explaining a change. This plugin encodes two opinions:
 
-## Components
+**Comments** should be as short as possible while carrying as much relevant information as possible, and exist only where relevant — never as one giant block. Before keeping one, ask: *"What do I actually care about here — is this for a human, or just the LLM's scratchpad?"* Keep intent, *why* over *what*, trade-offs, constraints, gotchas, links to context, and required public-API docs. Cut narration, notes-to-self (`// as requested`, `// updated to handle X`), commented-out code, and doc dumps.
 
-**Skills** (`skills/`, shared by Cursor and Claude Code):
+**Descriptions** should answer **What / Why / How** and surface **interface and breaking changes** — the things a reviewer and a future reader actually need. The *Why* is the part LLMs skip and the part that matters most; the tool **never invents it** — if the motivation isn't in the diff, a ticket, or the branch context, it asks or leaves a placeholder rather than fabricating one.
 
-- `review-prose` — context-aware entry point. Auto-activates when you're wrapping up or reviewing a change. Detects whether you're in a git repo and on a working branch / have an open PR, then runs both passes against the right target.
-- `comment-bloat-review`, `pr-description-review` — the rubrics it applies. Marked `disable-model-invocation`, so they load only when named (by `review-prose` or the commands) and don't fire ambiently on their own.
+Review is the backstop; the bundled rule does prevention. The plugin holds itself to the same bar — its own files are kept lean.
 
-**Commands** (`commands/`, slash commands in both tools):
+## Usage
 
-| Command | Does |
-| --- | --- |
-| `/review-prose` | Both passes, context-aware |
-| `/review-pr-comments` | Comment-bloat pass only |
-| `/review-pr-description` | Description review + rewrite only |
+**Slash commands** (run them explicitly):
 
-**Rule** (`rules/llm-prose.mdc`) — **Cursor only.** Globbed to code files (not always-on), it keeps comments lean at authoring time. Claude Code has no `.mdc` rules; the `review-prose` skill carries the same discipline there.
+| Command | When | What it does |
+| --- | --- | --- |
+| `/review-prose` | wrapping up a branch or reviewing a PR | both passes, figures out the target itself |
+| `/review-pr-comments` | you only care about comments | flags comment bloat, proposes fixes |
+| `/review-pr-description` | you only care about the write-up | verdict + ready-to-paste rewrite |
+
+Targeting is automatic: with no argument it reviews the current branch (or its open PR); name a PR and it reviews that, e.g. `/review-prose 1242`. Ask it to apply the changes and it edits the comments and updates the PR body directly.
+
+**Or just ask** — the `review-prose` skill auto-activates when the model sees a relevant task, so "review the prose on this branch before I open a PR" or "are these comments bloated?" triggers it without a command.
+
+**Prevention** — in Cursor, the `llm-prose.mdc` rule applies while you edit code files and nudges the agent to write lean comments up front. (Claude Code carries that discipline inside the skill instead.)
 
 ## Install
 
-### Cursor — local (private, any plan)
+### Cursor — local (private repo, any plan)
 
-Team Marketplaces are Teams/Enterprise only, so for a private personal repo, install locally — your machine's git handles the private clone:
+Team Marketplaces are Teams/Enterprise only, so for a private personal repo install locally — your machine's git handles the private clone:
 
 ```bash
 git clone git@github.com:jamstop/llm-prose.git ~/.cursor/plugins/local/llm-prose
 # update later: cd ~/.cursor/plugins/local/llm-prose && git pull
 ```
 
-Restart Cursor. (`.cursor-plugin/plugin.json` is at the repo root.)
+Restart Cursor.
 
 ### Cursor — team marketplace (Teams/Enterprise)
 
@@ -50,34 +54,33 @@ Dashboard → Settings → Plugins → Team Marketplaces → Import from Repo. R
 /plugin install llm-prose@llm-prose
 ```
 
-(Uses `.claude-plugin/marketplace.json` + `.claude-plugin/plugin.json`. Skills and slash commands work; the `.mdc` rule does not — that discipline lives in the `review-prose` skill.)
-
 ### Any project, any tool
 
-Copy `skills/` into `.cursor/skills/` (or `.claude/skills/`) and `commands/` into the tool's commands dir. Copy the skills alongside the commands — the commands delegate to skills by name and won't work without them.
+Copy `skills/` and `commands/` into the tool's directories (`.cursor/`, `.claude/`, …). Copy the skills alongside the commands — the commands delegate to skills by name.
+
+## Components
+
+- **`skills/review-prose`** — context-aware entry point; auto-activates. Detects git/PR context and runs both passes against the right target.
+- **`skills/comment-bloat-review`, `skills/pr-description-review`** — the rubrics. `disable-model-invocation`, so they load only when named (by `review-prose` or a command) and don't fire ambiently.
+- **`commands/`** — the three slash commands above.
+- **`rules/llm-prose.mdc`** — Cursor-only, globbed to code files, not always-on. Write-time comment discipline.
 
 ## Portability
 
-The substance is plain Markdown skills/commands, which Cursor and Claude Code both load (the SKILL.md format is shared). The two manifests (`.cursor-plugin/`, `.claude-plugin/`) coexist in one repo. The Cursor `.mdc` rule is the only Cursor-specific piece. Other tools (Cline, Copilot) have no native plugin parity — copy the Markdown into their own conventions.
+Skills (`SKILL.md`) and slash commands are a shared format, so Cursor and Claude Code both load them; the two manifests (`.cursor-plugin/`, `.claude-plugin/`) coexist in one repo. The `.mdc` rule is the only Cursor-specific piece. Other tools (Cline, Copilot) lack native plugin parity — copy the Markdown into their conventions.
 
 ## Status
 
-Manifests and frontmatter validated. Skill auto-activation and command→skill loading are the standard model-invoked Skills mechanism but haven't been smoke-tested in a live session — run `/review-pr-comments` on a real diff once after install to confirm.
+Manifests and frontmatter are validated. Skill auto-activation and command→skill loading use the standard model-invoked Skills mechanism but haven't been smoke-tested live — run `/review-pr-comments` on a real diff once after install to confirm.
 
 ## Layout
 
 ```
 llm-prose/
 ├── .cursor-plugin/plugin.json
-├── .claude-plugin/
-│   ├── plugin.json
-│   └── marketplace.json
-├── commands/
-│   ├── review-prose.md
-│   ├── review-pr-comments.md
-│   └── review-pr-description.md
-├── rules/
-│   └── llm-prose.mdc            # Cursor only
+├── .claude-plugin/{plugin,marketplace}.json
+├── commands/{review-prose,review-pr-comments,review-pr-description}.md
+├── rules/llm-prose.mdc            # Cursor only
 └── skills/
     ├── review-prose/SKILL.md
     ├── comment-bloat-review/SKILL.md

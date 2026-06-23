@@ -30,6 +30,6 @@ Apply each rubric to the resolved target:
 
 ## 3. Output
 
-Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight — this skill is about cutting bloat, not adding it.
+Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight.
 
 For one pass only, use the `/review-pr-comments` or `/review-pr-description` command.
