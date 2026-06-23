@@ -54,9 +54,18 @@ cursor-agent --plugin-dir /path/to/llm-prose \
 
 Or copy `skills/`, `commands/`, `rules/` into a project's `.cursor/` (or `.claude/`) dirs — keep skills alongside commands, since commands delegate to skills by name.
 
-## Updating
+## Releasing & updating
 
-`autoUpdate` (set above) refreshes from the remote on session start. To force it: `claude plugin update llm-prose@llm-prose` (restart to apply). Develop in your checkout, `git push`, and the installed copy follows.
+Claude Code keys the installed plugin cache by **version** (`.../llm-prose/<version>/`). Pushing commits *without bumping the version does not reach installed users* — `claude plugin update` will report "already latest". So ship changes with a version bump.
+
+Cut a release with the helper (bumps the version in all three manifests, validates that they agree, commits, tags, pushes):
+
+```bash
+scripts/release.sh            # patch
+scripts/release.sh minor      # or: major / an explicit 1.2.3
+```
+
+Then pull it into an install: `claude plugin update llm-prose@llm-prose` (restart to apply), or rely on `autoUpdate` to refresh on the next session. The validator enforces that the version matches across `.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.
 
 ## Tests
 

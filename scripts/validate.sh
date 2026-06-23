@@ -30,6 +30,16 @@ claude_name=$(jq -r '.name // ""' .claude-plugin/plugin.json 2>/dev/null)
 echo "$cursor_name" | grep -qE '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$' \
   && ok "name is kebab-case" || err "name not kebab-case: '$cursor_name'"
 
+# --- versions agree across all manifests (else `claude plugin update` won't ship)
+cver=$(jq -r '.version // ""' .cursor-plugin/plugin.json)
+clver=$(jq -r '.version // ""' .claude-plugin/plugin.json)
+mver=$(jq -r '[.plugins[].version] | unique | join(",")' .claude-plugin/marketplace.json 2>/dev/null)
+if [ -n "$cver" ] && [ "$cver" = "$clver" ] && [ "$cver" = "$mver" ]; then
+  ok "versions agree ($cver)"
+else
+  err "version mismatch: cursor='$cver' claude='$clver' marketplace='$mver'"
+fi
+
 # --- skills: frontmatter + name matches directory --------------------------
 declare -a skills=()
 for d in skills/*/; do
