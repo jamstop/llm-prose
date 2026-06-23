@@ -1,9 +1,9 @@
 ---
-name: review-comments
+name: review-pr-comments
 description: Review the comments in a PR or local diff for bloat, redundancy, and LLM residue.
 ---
 
-# Review Comments
+# Review PR Comments
 
 Load and follow the `comment-bloat-review` skill, applying it to the target diff.
 

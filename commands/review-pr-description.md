@@ -1,9 +1,9 @@
 ---
-name: review-description
+name: review-pr-description
 description: Review and rewrite a PR description so it covers What, Why, How, and interface changes.
 ---
 
-# Review Description
+# Review PR Description
 
 Load and follow the `pr-description-review` skill, applying it to the target PR.
 
