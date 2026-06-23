@@ -1,6 +1,7 @@
 ---
 name: comment-bloat-review
 description: Review a diff for bloated, redundant, or LLM-residue comments and over-documentation, then propose tighter edits. Use when reviewing a PR or code changes, when the user asks to check comments, clean up comments, or trim documentation, or when comments look auto-generated.
+disable-model-invocation: true
 ---
 
 # Comment Bloat Review

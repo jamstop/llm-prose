@@ -1,0 +1,17 @@
+{
+  "name": "llm-prose",
+  "owner": {
+    "name": "jamstop"
+  },
+  "metadata": {
+    "description": "Prose-layer review tooling for LLM-authored changes."
+  },
+  "plugins": [
+    {
+      "name": "llm-prose",
+      "source": "./",
+      "description": "Reviews comments for bloat and rewrites PR descriptions. Skills + slash commands.",
+      "version": "0.1.0"
+    }
+  ]
+}

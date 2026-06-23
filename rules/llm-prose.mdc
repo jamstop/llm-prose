@@ -1,22 +1,15 @@
 ---
-description: Keep comments and PR descriptions lean and useful — prevents LLM comment bloat and weak PR write-ups at authoring time.
-alwaysApply: true
+description: Keep code comments lean — explain why not what, no notes-to-self, no dead code. Prevents LLM comment bloat at authoring time.
+globs: ["**/*.{ts,tsx,js,jsx,py,swift,kt,java,go,rb,rs,c,cc,cpp,h,hpp,m,mm,cs,php,scala,sh,vue,svelte}"]
+alwaysApply: false
 ---
 
-# Prose discipline
+# Comment discipline
 
-When writing code or a PR description, avoid the bloat this repo's review tooling exists to catch.
-
-**Comments**
+When writing or editing code, keep comments lean:
 
 - Explain *why*, not *what*. Don't narrate code (`// increment counter`) or restate signatures.
-- Never leave notes-to-self / changelog comments (`// as requested`, `// updated to handle X`, `// this should now...`). That belongs in the PR, not the code.
+- No notes-to-self / changelog comments (`// as requested`, `// updated to handle X`, `// this should now...`). That belongs in the PR, not the code.
 - No commented-out code. No giant header blocks where one inline note would do.
 - Keep doc comments on public/exported APIs where the project requires them — trim everywhere else.
 - A comment earns its place only if it adds what the code can't: intent, trade-offs, constraints, gotchas, links to context.
-
-**PR descriptions**
-
-- Cover What (briefly), Why (the motivation — never invent it; if unknown, ask or leave a placeholder), and How (non-obvious choices).
-- Surface interface/breaking changes: APIs, signatures, props, endpoints, schema, config/env, flags.
-- Don't enumerate the diff or pad with filler ("several improvements", marketing adjectives).

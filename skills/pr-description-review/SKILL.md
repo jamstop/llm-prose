@@ -1,6 +1,7 @@
 ---
 name: pr-description-review
 description: Review or rewrite a pull request description so it covers What, Why, and How, and surfaces important code/interface changes. Use when reviewing a PR, writing or improving a PR description or summary, or when the user asks to check or fix a PR write-up.
+disable-model-invocation: true
 ---
 
 # PR Description Review
@@ -17,7 +18,7 @@ Judge a PR description against its actual diff and rewrite it to be useful to a 
 A good description answers, in order:
 
 - **What** — what changed, in one or two plain sentences. Not a file list; the diff already lists files.
-- **Why** — the motivation: problem, ticket/bug, user impact, or decision being implemented. This is the part LLMs most often omit.
+- **Why** — the motivation: problem, ticket/bug, user impact, or decision being implemented. This is the part LLMs most often omit. **Never invent it.** If the motivation isn't in the diff, a linked ticket, or the branch/commit context, ask the user or leave a `<!-- why: TODO -->` placeholder rather than fabricate one.
 - **How** — the approach and any non-obvious design choices or trade-offs. Skip step-by-step narration of the diff.
 - **Interface changes** — surface anything a consumer must notice: new/changed/removed public APIs, function signatures, props, endpoints, schema/migrations, config or env vars, breaking changes, feature flags. Call out breaking changes explicitly.
 

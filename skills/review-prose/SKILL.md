@@ -19,6 +19,8 @@ Pick the diff source from that:
 - PR exists -> `gh pr diff <n>`; description = the PR body.
 - Branch with changes, no PR -> `git diff <base>...HEAD` (or `git diff` / `--staged` for in-progress work); there's no description yet — offer to draft one.
 
+For large diffs, work per file (`--name-only` first, then diff the files that actually changed comments/logic) instead of loading the whole diff at once.
+
 ## 2. Run both passes
 
 Apply each rubric to the resolved target:
