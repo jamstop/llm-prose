@@ -32,54 +32,31 @@ Targeting is automatic: with no argument it reviews the current branch (or its o
 
 ## Install
 
-### Cursor — local (private repo, any plan)
-
-Team Marketplaces are Teams/Enterprise only, so for a private personal repo install locally — your machine's git handles the private clone:
+Install it **once through Claude Code's marketplace.** Cursor (both the IDE and the `cursor-agent` CLI) reads `~/.claude/plugins`, so a single Claude install makes the plugin available in **Claude Code, Cursor IDE, and Cursor CLI** — no per-tool setup, no `--plugin-dir`.
 
 ```bash
-git clone git@github.com:jamstop/llm-prose.git ~/.cursor/plugins/local/llm-prose
-# update later: cd ~/.cursor/plugins/local/llm-prose && git pull
+claude plugin marketplace add jamstop/llm-prose   # private repo OK (uses your git auth)
+claude plugin install llm-prose@llm-prose
 ```
 
-Restart Cursor.
+Restart/reload each tool once to pick it up. The `review-prose` skill then auto-activates on relevant tasks, and the `/prose*` commands are available explicitly. Updates: set `"autoUpdate": true` on the marketplace in `~/.claude/plugins/known_marketplaces.json` (tracks the remote), or run `claude plugin update llm-prose@llm-prose`.
 
-### Cursor — team marketplace (Teams/Enterprise)
+> Why this and not a Cursor marketplace: Cursor's own marketplace is public-repo + manual review, and Team Marketplaces are Teams/Enterprise + org-scoped. The Claude plugin layer is the practical cross-tool path for a private repo.
 
-Dashboard → Settings → Plugins → Team Marketplaces → Import from Repo. Requires the repo under a Teams/Enterprise org with the Cursor GitHub App installed.
+### Ad-hoc / dev, without installing
 
-### Claude Code
-
-```
-/plugin marketplace add jamstop/llm-prose
-/plugin install llm-prose@llm-prose
-```
-
-### Cursor CLI (`cursor-agent`)
-
-The CLI loads a local plugin with `--plugin-dir`, so skills and commands work headlessly:
+`cursor-agent` can load the plugin straight from a checkout:
 
 ```bash
-cursor-agent --plugin-dir ~/.cursor/plugins/local/llm-prose \
+cursor-agent --plugin-dir /path/to/llm-prose \
   -p "use the comment-bloat-review skill to review the comments on this branch"
 ```
 
-Drop `--plugin-dir` into any agent invocation, alias it, or point it at the checkout directly. `-p` is non-interactive (good for scripts/CI); add `--output-format json` to parse results.
+Or copy `skills/`, `commands/`, `rules/` into a project's `.cursor/` (or `.claude/`) dirs — keep skills alongside commands, since commands delegate to skills by name.
 
-### Any project, any tool
+## Updating
 
-Copy `skills/` and `commands/` into the tool's directories (`.cursor/`, `.claude/`, …). Copy the skills alongside the commands — the commands delegate to skills by name.
-
-## Local dev & auto-update
-
-This machine consumes the plugin by symlinking the local Cursor plugin dir at the git checkout, so there's one source of truth that tracks `origin/main`:
-
-```bash
-ln -sfn /path/to/llm-prose ~/.cursor/plugins/local/llm-prose
-```
-
-`scripts/update.sh` does a safe `--ff-only` pull (no-ops on a dirty/diverged tree). A launchd agent (`~/Library/LaunchAgents/com.jamstop.llm-prose-update.plist`) runs it at login and every 30 min, so the checkout stays current with the remote. Cursor loads plugin files on window reload/restart, so reload to pick up a pull mid-session.
-
-Remove auto-update with: `launchctl unload ~/Library/LaunchAgents/com.jamstop.llm-prose-update.plist`.
+`autoUpdate` (set above) refreshes from the remote on session start. To force it: `claude plugin update llm-prose@llm-prose` (restart to apply). Develop in your checkout, `git push`, and the installed copy follows.
 
 ## Tests
 
@@ -115,7 +92,7 @@ Skills (`SKILL.md`) and slash commands are a shared format, so Cursor and Claude
 
 ## Status
 
-Manifests and frontmatter are validated. Skill auto-activation and command→skill loading use the standard model-invoked Skills mechanism but haven't been smoke-tested live — run `/prose-code-comments` on a real diff once after install to confirm.
+Manifests and frontmatter are validated (`scripts/validate.sh`, plus Claude's `plugin validate`). The behavioral eval passes, and the `review-prose` skill has been confirmed loading and self-describing in the Cursor CLI via the Claude install. The `disable-model-invocation` rubric skills surface only when named (by `review-prose` or a `/prose*` command), which is intended.
 
 ## Layout
 
