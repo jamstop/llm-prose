@@ -54,7 +54,6 @@ jobs:
             [ -n "$title" ] && consider "$(type_of "$title")"
           fi
 
-          # Also scan the commits introduced by this push.
           while IFS= read -r m; do [ -n "$m" ] && consider "$(type_of "$m")"; done \
             < <(git log --pretty=%s HEAD~1..HEAD 2>/dev/null || true)
 
