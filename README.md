@@ -66,7 +66,10 @@ Normal flow:
 
 Then `autoUpdate` refreshes on the next session, or pull it now with `claude plugin update llm-prose@llm-prose` (restart to apply).
 
-For an out-of-band release (no PR), `scripts/release.sh [patch|minor|major|X.Y.Z]` does the same bump locally. Its commit subject (`release: …`) isn't a conventional prefix, so the CI bumper skips it — no double bump.
+Out-of-band releases (no PR):
+
+- From GitHub: run the **auto version bump** workflow manually (Actions → Run workflow) and pick a level — handy for cutting a release off `main` without a code change.
+- From a clone: `scripts/release.sh [patch|minor|major|X.Y.Z]` bumps locally. Its commit subject (`release: …`) isn't a conventional prefix, so the CI bumper skips it — no double bump.
 
 ## Tests
 
