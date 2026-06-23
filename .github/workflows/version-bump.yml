@@ -1,35 +1,38 @@
 name: auto version bump
 
-# Bumps the plugin version on merge to main, sized from conventional-commit
-# prefixes (feat! -> major, feat -> minor, fix/docs/chore/refactor -> patch).
+# Bumps the plugin version when a PR merges, sized from the PR title's
+# conventional-commit prefix (feat! -> major, feat -> minor, fix/docs/chore/
+# refactor -> patch). Fires on pull_request:closed rather than push-to-main:
+# squash merges don't reliably emit a push event, but the merged PR always does.
 # Needed because Claude keys the install cache by version: no bump, no ship.
-# The bump commit carries [skip ci] so it never re-triggers this or validate.
+# The bump commit carries [skip ci] so it never re-triggers validate.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'skills/**'
-      - 'commands/**'
-      - 'rules/**'
-      - 'scripts/**'
-      - 'README.md'
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Bump level for a manual run
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
 
 jobs:
   bump:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
-      - name: Decide bump size from conventional commits
+      - name: Decide bump size
         id: decide
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           type_of() {
             case "$1" in
@@ -39,24 +42,11 @@ jobs:
               *) echo none;;
             esac
           }
-          rank() { case "$1" in major) echo 3;; minor) echo 2;; patch) echo 1;; *) echo 0;; esac; }
-
-          bump=none
-          consider() { [ "$(rank "$1")" -gt "$(rank "$bump")" ] && bump="$1"; }
-
-          subject=$(git log -1 --pretty=%s)
-          consider "$(type_of "$subject")"
-
-          # Squash/merge subjects look like "... (#123)"; pull the PR title too.
-          pr=$(printf '%s' "$subject" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
-          if [ -n "$pr" ]; then
-            title=$(gh pr view "$pr" --json title --jq .title 2>/dev/null || true)
-            [ -n "$title" ] && consider "$(type_of "$title")"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            bump="${{ inputs.level }}"
+          else
+            bump=$(type_of "${{ github.event.pull_request.title }}")
           fi
-
-          while IFS= read -r m; do [ -n "$m" ] && consider "$(type_of "$m")"; done \
-            < <(git log --pretty=%s HEAD~1..HEAD 2>/dev/null || true)
-
           echo "bump=$bump" >> "$GITHUB_OUTPUT"
           echo "decided: $bump"
 
@@ -87,4 +77,4 @@ jobs:
           git add .cursor-plugin/plugin.json .claude-plugin/plugin.json .claude-plugin/marketplace.json
           git commit -m "chore: bump version to $NEW [skip ci]"
           git tag "llm-prose--v$NEW"
-          git push origin HEAD --tags
+          git push origin HEAD:main --tags
