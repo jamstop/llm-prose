@@ -54,18 +54,19 @@ cursor-agent --plugin-dir /path/to/llm-prose \
 
 Or copy `skills/`, `commands/`, `rules/` into a project's `.cursor/` (or `.claude/`) dirs — keep skills alongside commands, since commands delegate to skills by name.
 
-## Releasing & updating
+## Contributing & releasing
 
-Claude Code keys the installed plugin cache by **version** (`.../llm-prose/<version>/`). Pushing commits *without bumping the version does not reach installed users* — `claude plugin update` will report "already latest". So ship changes with a version bump.
+Changes land via PRs, and the version bumps itself on merge. Claude Code keys the installed plugin cache by **version** (`.../llm-prose/<version>/`), so an un-bumped change never reaches installed users — `claude plugin update` reports "already latest".
 
-Cut a release with the helper (bumps the version in all three manifests, validates that they agree, commits, tags, pushes):
+Normal flow:
 
-```bash
-scripts/release.sh            # patch
-scripts/release.sh minor      # or: major / an explicit 1.2.3
-```
+1. Branch, then commit with a [conventional](https://www.conventionalcommits.org/) prefix — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:` (use `feat!:` for breaking).
+2. Open a PR with a conventional **title** (it's the bump signal). Dogfood it: run `/prose` (or `/prose-code-comments`) on the diff.
+3. On merge to `main`, `.github/workflows/version-bump.yml` reads the title/commits, bumps all three manifests (`major` for `feat!`, `minor` for `feat`, `patch` for the rest), validates they agree, commits `chore: bump … [skip ci]`, and tags `llm-prose--vX.Y.Z`.
 
-Then pull it into an install: `claude plugin update llm-prose@llm-prose` (restart to apply), or rely on `autoUpdate` to refresh on the next session. The validator enforces that the version matches across `.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.
+Then `autoUpdate` refreshes on the next session, or pull it now with `claude plugin update llm-prose@llm-prose` (restart to apply).
+
+For an out-of-band release (no PR), `scripts/release.sh [patch|minor|major|X.Y.Z]` does the same bump locally. Its commit subject (`release: …`) isn't a conventional prefix, so the CI bumper skips it — no double bump.
 
 ## Tests
 
