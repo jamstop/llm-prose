@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Cut a release. Bumps the version across every manifest, validates, commits,
-# tags, and pushes.
+# Manual release, for cutting a version outside the normal PR flow.
+# (Normally, merging a conventional-commit PR auto-bumps via version-bump.yml.)
 #
-# Why this matters: Claude Code keys the installed plugin cache by version
-# (.../llm-prose/<version>/). Pushing commits WITHOUT bumping the version does
-# not reach installed users — `claude plugin update` reports "already latest".
-# So every user-facing change ships through here.
+# Claude keys the install cache by version (.../llm-prose/<version>/), so an
+# un-bumped change never reaches installed users. The "release:" subject below
+# is deliberately not a conventional prefix, so the CI bumper ignores it — no
+# double bump if this runs against main.
 #
 # Usage:
 #   scripts/release.sh            # patch bump (x.y.Z+1)
