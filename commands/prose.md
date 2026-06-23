@@ -1,5 +1,5 @@
 ---
-name: review-prose
+name: prose
 description: Review the prose layer of the current change — comments and PR description — for LLM bloat and clarity.
 ---
 
@@ -7,4 +7,4 @@ description: Review the prose layer of the current change — comments and PR de
 
 Load and follow the `review-prose` skill. It detects the git/PR context, then runs both the comment-bloat and PR-description passes against the resolved target.
 
-For a single pass, use `/review-pr-comments` or `/review-pr-description` instead.
+For a single pass, use `/prose-code-comments` or `/prose-pr-description` instead.

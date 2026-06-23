@@ -1,5 +1,5 @@
 ---
-name: review-pr-comments
+name: prose-code-comments
 description: Review the comments in a PR or local diff for bloat, redundancy, and LLM residue.
 ---
 

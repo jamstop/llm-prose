@@ -20,11 +20,11 @@ Review is the backstop; the bundled rule does prevention. The plugin holds itsel
 
 | Command | When | What it does |
 | --- | --- | --- |
-| `/review-prose` | wrapping up a branch or reviewing a PR | both passes, figures out the target itself |
-| `/review-pr-comments` | you only care about comments | flags comment bloat, proposes fixes |
-| `/review-pr-description` | you only care about the write-up | verdict + ready-to-paste rewrite |
+| `/prose` | wrapping up a branch or reviewing a PR | both passes, figures out the target itself |
+| `/prose-code-comments` | you only care about comments | flags comment bloat, proposes fixes |
+| `/prose-pr-description` | you only care about the write-up | verdict + ready-to-paste rewrite |
 
-Targeting is automatic: with no argument it reviews the current branch (or its open PR); name a PR and it reviews that, e.g. `/review-prose 1242`. Ask it to apply the changes and it edits the comments and updates the PR body directly.
+Targeting is automatic: with no argument it reviews the current branch (or its open PR); name a PR and it reviews that, e.g. `/prose 1242`. Ask it to apply the changes and it edits the comments and updates the PR body directly.
 
 **Or just ask** — the `review-prose` skill auto-activates when the model sees a relevant task, so "review the prose on this branch before I open a PR" or "are these comments bloated?" triggers it without a command.
 
@@ -115,7 +115,7 @@ Skills (`SKILL.md`) and slash commands are a shared format, so Cursor and Claude
 
 ## Status
 
-Manifests and frontmatter are validated. Skill auto-activation and command→skill loading use the standard model-invoked Skills mechanism but haven't been smoke-tested live — run `/review-pr-comments` on a real diff once after install to confirm.
+Manifests and frontmatter are validated. Skill auto-activation and command→skill loading use the standard model-invoked Skills mechanism but haven't been smoke-tested live — run `/prose-code-comments` on a real diff once after install to confirm.
 
 ## Layout
 
@@ -123,7 +123,7 @@ Manifests and frontmatter are validated. Skill auto-activation and command→ski
 llm-prose/
 ├── .cursor-plugin/plugin.json
 ├── .claude-plugin/{plugin,marketplace}.json
-├── commands/{review-prose,review-pr-comments,review-pr-description}.md
+├── commands/{prose,prose-code-comments,prose-pr-description}.md
 ├── rules/llm-prose.mdc            # Cursor only
 └── skills/
     ├── review-prose/SKILL.md

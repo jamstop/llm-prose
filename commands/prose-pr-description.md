@@ -1,5 +1,5 @@
 ---
-name: review-pr-description
+name: prose-pr-description
 description: Review and rewrite a PR description so it covers What, Why, How, and interface changes.
 ---
 

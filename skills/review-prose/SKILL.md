@@ -32,4 +32,4 @@ Apply each rubric to the resolved target:
 
 Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight.
 
-For one pass only, use the `/review-pr-comments` or `/review-pr-description` command.
+For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command.
