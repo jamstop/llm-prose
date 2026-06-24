@@ -6,7 +6,7 @@ on a self-contained snippet, including the false-positive boundaries that the
 0.4.x fixes pinned down. Read top to bottom to learn what the linter promises.
 """
 
-from prose_lint import lint_source
+from deslop import lint_source
 
 
 def lint(src, lang="python", rules=None):
@@ -180,7 +180,7 @@ class TestStructuralInvariants:
 
 
 def test_unknown_extension_is_skipped(tmp_path):
-    from prose_lint import lint_path
+    from deslop import lint_path
     p = tmp_path / "notes.txt"
     p.write_text("# as requested\n")
     assert lint_path(str(p)) == []

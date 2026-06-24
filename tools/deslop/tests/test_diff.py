@@ -1,6 +1,6 @@
 """Invariants for unified-diff parsing (the basis of `--diff` scoping)."""
 
-from prose_lint.diff import added_lines
+from deslop.diff import added_lines
 
 
 def test_maps_added_lines_to_new_file_numbers():

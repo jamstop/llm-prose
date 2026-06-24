@@ -22,7 +22,7 @@ def _emit_text(findings) -> None:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
-        prog="prose-lint",
+        prog="deslop",
         description="Deterministic, AST-based linter for mechanical comment bloat.",
     )
     p.add_argument("paths", nargs="*", help="files to lint")

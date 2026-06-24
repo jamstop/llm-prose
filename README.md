@@ -94,15 +94,15 @@ The fixture's slop is modeled on real in-the-wild patterns (narration, residue, 
 
 This is an LLM eval, so treat it as a smoke test, not a hard gate — it needs CLI auth and network, which is why it's not in CI. Add fixtures as you find comment patterns the skill mishandles.
 
-**Deterministic linter** (`tools/prose-lint`) — the mechanical rules as a real linter that parses code with an AST, so its score never flakes. Its `pytest` suite asserts exact-match findings on labeled fixtures and runs in CI (`.github/workflows/prose-lint.yml`):
+**Deterministic linter** (`tools/deslop`) — the mechanical rules as a real linter that parses code with an AST, so its score never flakes. Its `pytest` suite asserts exact-match findings on labeled fixtures and runs in CI (`.github/workflows/deslop.yml`):
 
 ```bash
-python3 -m venv tools/prose-lint/.venv
-tools/prose-lint/.venv/bin/python -m pip install -e "tools/prose-lint[test]"
-tools/prose-lint/.venv/bin/python -m pytest tools/prose-lint -q
+python3 -m venv tools/deslop/.venv
+tools/deslop/.venv/bin/python -m pip install -e "tools/deslop[test]"
+tools/deslop/.venv/bin/python -m pytest tools/deslop -q
 ```
 
-Run it on a change with `git diff | scripts/prose-lint --diff`. See [tools/prose-lint/README.md](tools/prose-lint/README.md).
+Run it on a change with `git diff | scripts/deslop --diff`. See [tools/deslop/README.md](tools/deslop/README.md). It's an *optional pre-pass* for the skills, not the product — on Python projects, `eradicate` and `pydoclint`/`docsig` already cover commented-out code and docstring/signature checks more thoroughly; `deslop`'s niche is being multi-language and feeding the judgment layer.
 
 ## Components
 
@@ -110,7 +110,7 @@ Run it on a change with `git diff | scripts/prose-lint --diff`. See [tools/prose
 - **`skills/comment-bloat-review`, `skills/pr-description-review`** — the rubrics. `disable-model-invocation`, so they load only when named (by `review-prose` or a command) and don't fire ambiently.
 - **`commands/`** — the three slash commands above.
 - **`rules/llm-prose.mdc`** — Cursor-only, globbed to code files, not always-on. Write-time comment discipline.
-- **`tools/prose-lint`** — deterministic, AST-based linter (Python + tree-sitter) for the mechanical rules only: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. No model, so it is reproducible, CI-gateable, and the skills use it as an optional pre-pass. Rules: [tools/prose-lint/RULES.md](tools/prose-lint/RULES.md).
+- **`tools/deslop`** — deterministic, AST-based linter (Python + tree-sitter) for the mechanical rules only: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. No model, so it is reproducible, CI-gateable, and the skills use it as an optional pre-pass. Rules: [tools/deslop/RULES.md](tools/deslop/RULES.md).
 
 ## Portability
 
@@ -143,8 +143,8 @@ llm-prose/
 │   ├── review-prose/SKILL.md
 │   ├── comment-bloat-review/SKILL.md
 │   └── pr-description-review/SKILL.md
-└── tools/prose-lint/              # deterministic AST linter (Python)
-    ├── prose_lint/                # rules R1-R3, tree-sitter wrappers, CLI
+└── tools/deslop/                  # deterministic AST linter (Python)
+    ├── deslop/                    # rules R1-R3, tree-sitter wrappers, CLI
     ├── tests/                     # labeled fixtures + exact-match score
     └── RULES.md
 ```

@@ -1,14 +1,14 @@
-name: prose-lint
+name: deslop
 
 on:
   push:
     paths:
-      - 'tools/prose-lint/**'
-      - '.github/workflows/prose-lint.yml'
+      - 'tools/deslop/**'
+      - '.github/workflows/deslop.yml'
   pull_request:
     paths:
-      - 'tools/prose-lint/**'
-      - '.github/workflows/prose-lint.yml'
+      - 'tools/deslop/**'
+      - '.github/workflows/deslop.yml'
 
 jobs:
   test:
@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install
-        working-directory: tools/prose-lint
+        working-directory: tools/deslop
         run: pip install -e ".[test]"
       - name: Test
-        working-directory: tools/prose-lint
+        working-directory: tools/deslop
         run: python -m pytest -q

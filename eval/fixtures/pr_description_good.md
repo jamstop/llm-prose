@@ -1,7 +1,13 @@
 <!-- FIXTURE: the tightened counterpart to pr_description_stately.md — same change,
      written to be useful to a reviewer. Leads with what + why, surfaces the
      behavior change, drops the file list. The description pass should leave this
-     essentially alone. -->
+     essentially alone.
+
+     NOTE: the specifics (SUPPORT-1421, file names, the 30-minute timeout) are
+     invented for the fixture — there's no real ticket or code behind them. The
+     point is the *shape* of a good description, not the facts. A real PR must
+     cite a real Why; don't read this as license to fabricate one. -->
+
 
 ## Summary
 

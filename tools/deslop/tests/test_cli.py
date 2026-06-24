@@ -3,7 +3,7 @@
 import io
 import json
 
-from prose_lint import cli
+from deslop import cli
 
 
 def _write(tmp_path, name, text):

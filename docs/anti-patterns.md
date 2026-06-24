@@ -51,7 +51,7 @@ const newFunction = () => { ... };
 ```
 **Fix:** delete. It's in git history.
 Source: [awesome-copilot](https://github.com/github/awesome-copilot/blob/main/instructions/self-explanatory-code-commenting.instructions.md).
-*(prose-lint catches this deterministically — rule R2.)*
+*(deslop catches this deterministically — rule R2.)*
 
 ### LLM residue — the model talking to the reviewer
 The comment narrates the *edit* or addresses the prompt, not the code.
@@ -61,7 +61,7 @@ The comment narrates the *edit* or addresses the prompt, not the code.
 # Updated this per review feedback to also handle the empty list
 ```
 **Fix:** delete. A future reader needs the code's intent, not the chat transcript.
-*(prose-lint catches the explicit phrases — rule R1.)*
+*(deslop catches the explicit phrases — rule R1.)*
 
 ---
 

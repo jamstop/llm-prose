@@ -7,7 +7,7 @@ exact-equality assertion catches both.
 
 from pathlib import Path
 
-from prose_lint import lint_path
+from deslop import lint_path
 
 FIX = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[3]

@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Audit only the **added/changed** lines in a diff for comment bloat and over-documentation. Code logic is out of scope unless a comment is actively wrong.
 
+Your value here is **judgment**, not pattern-matching. The mechanical cases (exact-phrase LLM residue, commented-out code, docstrings that restate the signature) can be linted deterministically — see the pre-pass below. Spend your attention on what a regex can't decide: whether a comment narrates *what* instead of explaining *why*, whether it's a scratchpad note to the model vs. real intent for a human, whether it's gone stale against the changed code, and whether it earns its tokens at all. When in doubt, that's exactly the call only you can make.
+
 ## 1. Get the diff
 
 - A PR is named/numbered, or you're told to review a branch -> `gh pr diff <n>` (or `gh pr diff` on the current branch). Use `gh pr view <n> --json files,title,body` for context.
@@ -15,7 +17,7 @@ Audit only the **added/changed** lines in a diff for comment bloat and over-docu
 
 Focus on `+` lines. Pre-existing comments are out of scope unless the change made them stale.
 
-**Deterministic pre-pass (optional).** If the repo ships `prose-lint` (`scripts/prose-lint`), run it on the diff first — `git diff | scripts/prose-lint --diff` (or `gh pr diff <n> | scripts/prose-lint --diff`). It flags the unambiguous cases reproducibly: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. Treat its hits as already decided and spend your judgment on the rest (narration, intent, why-over-what, stale) that it deliberately doesn't cover.
+**Deterministic pre-pass (optional).** If the repo ships `deslop` (`scripts/deslop`), run it on the diff first — `git diff | scripts/deslop --diff` (or `gh pr diff <n> | scripts/deslop --diff`). It flags the unambiguous cases reproducibly: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. Treat its hits as already decided and spend your judgment on the rest (narration, intent, why-over-what, stale) that it deliberately doesn't cover. (On Python-only repos, `eradicate` and `pydoclint`/`docsig` are mature alternatives for the commented-out-code and docstring checks; `deslop`'s edge is multi-language coverage.)
 
 ## 2. Flag these patterns
 

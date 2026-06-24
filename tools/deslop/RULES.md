@@ -1,4 +1,4 @@
-# prose-lint rule catalog
+# deslop rule catalog
 
 The deterministic half of the `comment-bloat-review` rubric. Each rule here is a
 mechanical, reproducible check run over an AST — no model, no judgment. Anything
