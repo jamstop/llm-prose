@@ -1,7 +1,6 @@
 .DS_Store
 
-# prose-lint (Python tool)
-tools/prose-lint/.venv/
+# deslop is stdlib-only and bundled in the skill; only transient python caches.
 **/__pycache__/
 **/.pytest_cache/
 *.egg-info/

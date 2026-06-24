@@ -1,0 +1,23 @@
+name: deslop
+
+on:
+  push:
+    paths:
+      - 'skills/comment-bloat-review/scripts/**'
+      - '.github/workflows/deslop.yml'
+  pull_request:
+    paths:
+      - 'skills/comment-bloat-review/scripts/**'
+      - '.github/workflows/deslop.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # The tool is stdlib-only; pytest is the only dev dependency.
+      - run: pip install pytest
+      - run: python -m pytest skills/comment-bloat-review/scripts/tests -q

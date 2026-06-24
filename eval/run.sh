@@ -18,9 +18,9 @@ cd "$(dirname "$0")" || exit 2
 
 PLUGIN="${PLUGIN_DIR:-$(cd .. && pwd)}"
 SAMPLE="$(cat fixtures/sample.py)"
-DELETE=(CMT_B1 CMT_B2 CMT_B3 CMT_B4)
+DELETE=(CMT_B1 CMT_B2 CMT_B3 CMT_B4 CMT_B5 CMT_B6 CMT_B7 CMT_B8)
 TIGHTEN=(CMT_T1)
-KEEP=(CMT_K1 CMT_K2 CMT_K3)
+KEEP=(CMT_K1 CMT_K2 CMT_K3 CMT_K4)
 RUNS="${RUNS:-1}"
 MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
 

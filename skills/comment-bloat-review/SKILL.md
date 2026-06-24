@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Audit only the **added/changed** lines in a diff for comment bloat and over-documentation. Code logic is out of scope unless a comment is actively wrong.
 
+Your value here is **judgment**, not pattern-matching. The two unambiguous, mechanical cases — exact-phrase LLM residue and commented-out code — are caught deterministically by the bundled `deslop` pre-pass (step 1). Spend your attention on what a regex can't decide: whether a comment narrates *what* instead of explaining *why*, whether a docstring restates the signature or earns its keep, whether it's a scratchpad note to the model vs. real intent for a human, whether it's gone stale against the changed code. When in doubt, that's exactly the call only you can make.
+
 ## 1. Get the diff
 
 - A PR is named/numbered, or you're told to review a branch -> `gh pr diff <n>` (or `gh pr diff` on the current branch). Use `gh pr view <n> --json files,title,body` for context.
@@ -15,7 +17,14 @@ Audit only the **added/changed** lines in a diff for comment bloat and over-docu
 
 Focus on `+` lines. Pre-existing comments are out of scope unless the change made them stale.
 
-**Deterministic pre-pass (optional).** If the repo ships `prose-lint` (`scripts/prose-lint`), run it on the diff first — `git diff | scripts/prose-lint --diff` (or `gh pr diff <n> | scripts/prose-lint --diff`). It flags the unambiguous cases reproducibly: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. Treat its hits as already decided and spend your judgment on the rest (narration, intent, why-over-what, stale) that it deliberately doesn't cover.
+**Deterministic pre-pass — run it first.** `deslop` is a stdlib-only script bundled in this skill (no install). Pipe the diff through it before you start reading:
+
+```
+git diff | python3 scripts/deslop.py --diff
+# or, for a PR:  gh pr diff <n> | python3 scripts/deslop.py --diff
+```
+
+`scripts/deslop.py` is relative to this skill's directory. It reproducibly flags the two unambiguous cases — notes-to-self / LLM residue and commented-out code — and stays silent on everything debatable. Treat its hits as already decided; spend your own judgment on the rest (narration, why-over-what, doc-dump tightening, staleness). If the script can't be located or run for any reason, just proceed with judgment — it's an accelerant, not a gate. (On Python-only repos, `eradicate` and `pydoclint`/`docsig` are mature deeper checks for commented-out code and docstrings.)
 
 ## 2. Flag these patterns
 

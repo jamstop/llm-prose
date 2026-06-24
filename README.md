@@ -90,17 +90,20 @@ RUNS=5 bash eval/run.sh       # repeat to gauge flakiness
 MODEL=sonnet-4-thinking bash eval/run.sh
 ```
 
+The fixture's slop is modeled on real in-the-wild patterns (narration, residue, doc dumps) catalogued in [`docs/anti-patterns.md`](docs/anti-patterns.md). For the description pass, `eval/fixtures/pr_description_stately.md` (a "stately" AI-slop write-up) and `pr_description_good.md` (its tightened counterpart) are a dogfooding pair — run `/prose-pr-description` against them and confirm the verdict.
+
 This is an LLM eval, so treat it as a smoke test, not a hard gate — it needs CLI auth and network, which is why it's not in CI. Add fixtures as you find comment patterns the skill mishandles.
 
-**Deterministic linter** (`tools/prose-lint`) — the mechanical rules as a real linter that parses code with an AST, so its score never flakes. Its `pytest` suite asserts exact-match findings on labeled fixtures and runs in CI (`.github/workflows/prose-lint.yml`):
+**Deterministic pre-pass** (`deslop`) — a stdlib-only, single-file script bundled *inside* the `comment-bloat-review` skill (`skills/comment-bloat-review/scripts/deslop.py`). The skill runs it on the diff before applying judgment, so the two unambiguous cases — LLM residue and commented-out code — are caught reproducibly on every review, with no install. It is intentionally narrow: anything debatable (narration, doc-dump tightening, staleness) it leaves to the model.
+
+It's bundled rather than separately installed for a reason: Cursor exposes no plugin-root path or install hook, so a stdlib-only script in the skill's own `scripts/` dir is the one mechanism that reliably runs from any repo. Run it directly with the repo-root shim, and its tests with plain `pytest`:
 
 ```bash
-python3 -m venv tools/prose-lint/.venv
-tools/prose-lint/.venv/bin/python -m pip install -e "tools/prose-lint[test]"
-tools/prose-lint/.venv/bin/python -m pytest tools/prose-lint -q
+git diff | scripts/deslop --diff
+pip install pytest && python -m pytest skills/comment-bloat-review/scripts/tests -q
 ```
 
-Run it on a change with `git diff | scripts/prose-lint --diff`. See [tools/prose-lint/README.md](tools/prose-lint/README.md).
+Rules and rationale: [skills/comment-bloat-review/scripts/RULES.md](skills/comment-bloat-review/scripts/RULES.md). On Python projects, `eradicate` and `pydoclint`/`docsig` are mature deeper checks for commented-out code and docstrings; `deslop`'s niche is being language-agnostic and always-on.
 
 ## Components
 
@@ -108,7 +111,7 @@ Run it on a change with `git diff | scripts/prose-lint --diff`. See [tools/prose
 - **`skills/comment-bloat-review`, `skills/pr-description-review`** — the rubrics. `disable-model-invocation`, so they load only when named (by `review-prose` or a command) and don't fire ambiently.
 - **`commands/`** — the three slash commands above.
 - **`rules/llm-prose.mdc`** — Cursor-only, globbed to code files, not always-on. Write-time comment discipline.
-- **`tools/prose-lint`** — deterministic, AST-based linter (Python + tree-sitter) for the mechanical rules only: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. No model, so it is reproducible, CI-gateable, and the skills use it as an optional pre-pass. Rules: [tools/prose-lint/RULES.md](tools/prose-lint/RULES.md).
+- **`skills/comment-bloat-review/scripts/deslop.py`** — a stdlib-only, language-agnostic deterministic pre-pass bundled in the skill, covering the two mechanical cases only: notes-to-self / LLM residue and commented-out code. No model, no install, so it's reproducible, CI-gateable, and runs on every review. Rules: [RULES.md](skills/comment-bloat-review/scripts/RULES.md).
 
 ## Portability
 
@@ -116,9 +119,11 @@ Skills (`SKILL.md`) and slash commands are a shared format, so Cursor and Claude
 
 ## Further reading
 
+See [`docs/anti-patterns.md`](docs/anti-patterns.md) for a gallery of real, sourced examples of the bloat this plugin catches — narration, doc dumps, dead code, and the "stately" AI-slop PR description — with the fixes.
+
 The rubrics distill a few canonical sources — read these for the long form:
 
-- **Comments** — [Go Doc Comments](https://go.dev/doc/comment) (the "improve the code so the comment isn't needed" ethos), [TigerBeetle TIGER_STYLE](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) (comments explain *why*), and [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/) + [Rust RFC 505](https://rust-lang.github.io/rfcs/0505-api-comment-conventions.html) (summary-first doc comments, structured sections).
+- **Comments** — [Go Doc Comments](https://go.dev/doc/comment) (the "improve the code so the comment isn't needed" ethos), [TigerBeetle TIGER_STYLE](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) (comments explain *why*), [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/) + [Rust RFC 505](https://rust-lang.github.io/rfcs/0505-api-comment-conventions.html) (summary-first doc comments, structured sections), and GitHub's own [awesome-copilot self-explanatory-code-commenting instructions](https://github.com/github/awesome-copilot/blob/main/instructions/self-explanatory-code-commenting.instructions.md) (a catalog of the exact comment types to avoid).
 - **PR descriptions** — [GitHub: how to write the perfect pull request](https://github.blog/developer-skills/github/how-to-write-the-perfect-pull-request/), [opensource.com: anatomy of a perfect PR](https://opensource.com/article/18/6/anatomy-perfect-pull-request) (small, single-purpose PRs), and [Chris Beams: how to write a git commit message](https://cbea.ms/git-commit/).
 
 ## Status
@@ -133,12 +138,16 @@ llm-prose/
 ├── .claude-plugin/{plugin,marketplace}.json
 ├── commands/{prose,prose-code-comments,prose-pr-description}.md
 ├── rules/llm-prose.mdc            # Cursor only
-├── skills/
-│   ├── review-prose/SKILL.md
-│   ├── comment-bloat-review/SKILL.md
-│   └── pr-description-review/SKILL.md
-└── tools/prose-lint/              # deterministic AST linter (Python)
-    ├── prose_lint/                # rules R1-R3, tree-sitter wrappers, CLI
-    ├── tests/                     # labeled fixtures + exact-match score
-    └── RULES.md
+├── docs/anti-patterns.md          # sourced gallery of real bloat + fixes
+├── eval/                          # behavioral eval + fixtures (comments & PR descriptions)
+├── scripts/deslop                 # repo-root shim -> the bundled script
+└── skills/
+    ├── review-prose/SKILL.md
+    ├── pr-description-review/SKILL.md
+    └── comment-bloat-review/
+        ├── SKILL.md
+        └── scripts/               # deslop: stdlib-only deterministic pre-pass
+            ├── deslop.py           # R1 residue + R2 commented-out code, --diff/file
+            ├── RULES.md
+            └── tests/              # invariants + diff/CLI behavior (pytest)
 ```

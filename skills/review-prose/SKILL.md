@@ -25,7 +25,7 @@ For large diffs, work per file (`--name-only` first, then diff the files that ac
 
 Apply each rubric to the resolved target:
 
-- **Comments** — follow the `comment-bloat-review` skill. If `scripts/prose-lint` exists, run it on the diff first for the deterministic hits, then add judgment on top.
+- **Comments** — follow the `comment-bloat-review` skill. It begins with a bundled deterministic pre-pass (`deslop`) on the diff, then layers judgment on top.
 - **Description** — follow the `pr-description-review` skill (skip if not a git/PR context).
 
 ## 3. Output
