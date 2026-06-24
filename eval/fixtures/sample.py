@@ -58,3 +58,18 @@ def retry_with_backoff(operation, max_attempts=5):
 def parse_iso8601(text):
     """CMT_K3 Parse an ISO 8601 timestamp; assumes UTC when the string carries no offset."""
     return _parse(text)
+
+
+def tally_attempts(events):
+    count = 0  # CMT_B5 initialize the counter to zero
+    for event in events:
+        count += 1  # CMT_B6 increment the counter by one
+    return count  # CMT_B7 return the total count
+
+
+def normalize_currency(raw):
+    # CMT_B8 This should now correctly handle the null case as requested
+    if raw is None:
+        return "usd"
+    # CMT_K4 ISO 4217 codes are case-insensitive; Stripe rejects upper-case, so force lower
+    return raw.strip().lower()
