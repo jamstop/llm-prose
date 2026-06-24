@@ -13,12 +13,19 @@ the same grammar — the trick a regex can't do reliably.
 
 ### R1 — notes-to-self / LLM residue  (action: delete)
 A comment whose text matches a curated phrase set: the model talking to itself
-or to the reviewer, or a changelog left in code.
+or to the reviewer.
 
-- Triggers: `as requested`, `as you (asked|requested)`, `per (your|the) feedback`,
-  `per review`, `I (changed|added|updated|removed|renamed|made)`, `updated to`,
-  `note: I`, `for now`, changelog-ish (`vX.Y`, ISO dates).
-- Rationale: these never carry information a future reader needs.
+- Triggers (matched anywhere): `as requested`, `as you (asked|requested)`,
+  `per (your|the) feedback`, `per review`, `note: I`, `as a reminder`.
+- Triggers (only when they *lead* the comment): `I (changed|added|updated|
+  removed|renamed|refactored|made|fixed) …`, `updated to …`. Anchored to the
+  start because the same verbs mid-sentence ("the digest I compute") are
+  ordinary descriptive prose.
+- Deliberately *not* triggered: bare version (`vX.Y`) or ISO-date mentions.
+  They false-positive on legitimate why-comments that cite an API version or a
+  deprecation date, which is exactly the prose we want to keep.
+- Rationale: precision over recall — R1's value is being deterministic *and*
+  trustworthy, so anything ambiguous is left to the LLM skill.
 - Language scope: all (operates on comment text).
 
 ### R2 — commented-out code  (action: delete)
@@ -38,10 +45,13 @@ A Python docstring whose `Args:`/`Returns:` sections add nothing over the
 one-line summary and the parameter names.
 
 - Mechanism: from the `function_definition`, read the docstring (first string in
-  the body) and the parameter names. Parse Google-style sections. An `Args`
-  entry or the `Returns` text is "redundant" when its content words are a subset
-  of (summary words ∪ that entry's own name ∪ stopwords). Flag the docstring
-  when at least one section is redundant.
+  the body). Parse Google-style sections. An `Args` entry is "redundant" when its
+  content words are a subset of (summary words ∪ that entry's own name ∪
+  stopwords); the `Returns:` block is judged as a whole the same way. Flag the
+  docstring when at least one section is redundant. A bare `Returns:` header
+  (description wrapped onto the next line) is never redundant on its own — the
+  wrapped text is collected and judged as a block, so a substantive multi-line
+  return is left alone.
 - Action is *tighten*, not delete: keep the summary (and any genuinely
   non-obvious note), cut the boilerplate sections. This is the 0.3.0 nuance.
 - Language scope: Python first (docstrings); comment-style doc blocks for other

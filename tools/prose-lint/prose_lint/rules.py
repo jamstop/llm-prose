@@ -10,18 +10,28 @@ from .model import Finding
 
 # --- R1: notes-to-self / LLM residue -----------------------------------------
 
+# Unambiguous residue phrases, matched anywhere in the comment.
 _RESIDUE = re.compile(
     r"""
     \bas\ requested\b
   | \bas\ you\ (?:asked|requested)\b
   | \bper\ (?:your\ |the\ )?feedback\b
   | \bper\ review\b
-  | \bI\ (?:changed|added|updated|removed|renamed|refactored|made|fixed)\b
-  | \bupdated\ to\b
   | \bnote:\ I\b
   | \bas\ a\ reminder\b
-  | \bv\d+\.\d+(?:\.\d+)?\b
-  | \b\d{4}-\d{2}-\d{2}\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Edit-narration reads as residue only when it *leads* the comment; the same
+# verbs mid-sentence ("the digest I compute") are ordinary descriptive prose,
+# so this is anchored to the start of the stripped body. Bare version/date
+# mentions were dropped entirely — they false-positive on legitimate why-
+# comments that cite an API version or a deprecation date.
+_RESIDUE_LEAD = re.compile(
+    r"""
+    ^I\ (?:changed|added|updated|removed|renamed|refactored|made|fixed)\b
+  | ^updated\ to\b
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -101,32 +111,13 @@ def _docstring_of(body, src: bytes) -> str | None:
     return _unquote(ts.text(node, src)) if node is not None else None
 
 
-def _first_identifier(node, src: bytes) -> str | None:
-    for n in ts.walk(node):
-        if ts.kind(n) == "identifier":
-            return ts.text(n, src)
-    return None
-
-
-def _param_names(params, src: bytes) -> list[str]:
-    names = []
-    for child in ts.children(params):
-        k = ts.kind(child)
-        if k in ("(", ")", ",", ":"):
-            continue
-        ident = ts.text(child, src) if k == "identifier" else _first_identifier(child, src)
-        if ident and ident not in ("self", "cls"):
-            names.append(ident)
-    return names
-
-
 def _redundant(desc: str, name: str, summary: set[str]) -> bool:
     content = _tokens(desc) - _STOP
     allowed = summary | _name_tokens(name) | _STOP
     return content.issubset(allowed)
 
 
-def _docstring_restates(doc: str, params: list[str]) -> bool:
+def _docstring_restates(doc: str) -> bool:
     lines = [l.strip() for l in doc.splitlines()]
     summary_lines = []
     for l in lines:
@@ -136,24 +127,28 @@ def _docstring_restates(doc: str, params: list[str]) -> bool:
     summary = _tokens(" ".join(summary_lines))
 
     section = None
+    returns_parts: list[str] = []
     for l in lines:
         if _ARGS_HEADER.match(l):
             section = "args"
             continue
         rm = _RETURNS_HEADER.match(l)
         if rm:
-            if _redundant(rm.group(2), rm.group(1), summary):
-                return True
             section = "returns"
+            # The description may be inline ("Returns: x") or wrapped onto the
+            # next indented line. Collect either form and judge the whole block
+            # once below — a bare "Returns:" header is not itself redundant.
+            if rm.group(2).strip():
+                returns_parts.append(rm.group(2))
             continue
         if section == "args":
             m = _ENTRY.match(l)
-            if m and _redundant(m.group(3), m.group(1), summary):
+            if m and m.group(3).strip() and _redundant(m.group(3), m.group(1), summary):
                 return True
         elif section == "returns" and l:
-            if _redundant(l, "", summary):
-                return True
-    return False
+            returns_parts.append(l)
+
+    return bool(returns_parts) and _redundant(" ".join(returns_parts), "", summary)
 
 
 # --- rule runners ------------------------------------------------------------
@@ -167,7 +162,7 @@ def run_r1(root, src, language, path):
     out = []
     for node in _comment_nodes(root):
         body = strip_comment(ts.text(node, src))
-        if _RESIDUE.search(body):
+        if _RESIDUE.search(body) or _RESIDUE_LEAD.match(body):
             out.append(Finding(path, ts.row(node) + 1, "notes-to-self", "delete",
                                "comment is a note-to-self / LLM residue; delete"))
     return out
@@ -194,14 +189,12 @@ def run_r3(root, src, language, path):
         if ts.kind(node) != "function_definition":
             continue
         body = ts.field(node, "body")
-        params = ts.field(node, "parameters")
         if body is None:
             continue
         doc = _docstring_of(body, src)
         if not doc:
             continue
-        names = _param_names(params, src) if params is not None else []
-        if _docstring_restates(doc, names):
+        if _docstring_restates(doc):
             dn = _docstring_node(body)
             doc_line = ts.row(dn) + 1 if dn is not None else ts.row(body) + 1
             out.append(Finding(path, doc_line, "doc-dump", "tighten",
