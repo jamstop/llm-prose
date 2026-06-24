@@ -28,10 +28,20 @@ from dataclasses import dataclass
 
 # --- language profiles -------------------------------------------------------
 # A profile says how to find comments in a file: line markers, block-comment
-# pairs, and the string delimiters whose contents must be ignored (so a `#` or
-# `//` inside a string is never mistaken for a comment).
+# pairs, the string delimiters whose contents must be ignored (so a `#` or `//`
+# inside a string never fires), and optionally `char` — a `'` that is a char/rune
+# literal, not a string. The distinction matters: in Rust/Go/C a lone `'` is a
+# lifetime/label or part of a literal, NOT the start of a string, so treating it
+# as a string opener would swallow a trailing `//` comment on the same line.
 
-_C_LIKE = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "'", "`"]}
+# JS/TS: `'`, `"`, and backtick are all real string delimiters.
+_JS = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "'", "`"]}
+# Rust/Go/C/C++/Java/Kotlin/Scala: `"`/backtick are strings; `'` is a char/rune
+# literal, validated by pattern so a bare lifetime tick is left as ordinary text.
+_CHARLIT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "`"], "char": "'"}
+# Swift has no single-quote literal at all; just `"` and `"""`.
+_SWIFT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"'], "triple": ['"""']}
+
 _PROFILES = {
     "python": {"line": ["#"], "block": [], "strings": ['"', "'"], "triple": ['"""', "'''"]},
     "ruby": {"line": ["#"], "block": [], "strings": ['"', "'"]},
@@ -39,10 +49,15 @@ _PROFILES = {
     "yaml": {"line": ["#"], "block": [], "strings": ['"', "'"]},
     "sql": {"line": ["--"], "block": [("/*", "*/")], "strings": ["'"]},
     "lua": {"line": ["--"], "block": [], "strings": ['"', "'"]},
-    "go": _C_LIKE, "rust": _C_LIKE, "javascript": _C_LIKE, "typescript": _C_LIKE,
-    "tsx": _C_LIKE, "java": _C_LIKE, "kotlin": _C_LIKE, "scala": _C_LIKE,
-    "swift": _C_LIKE, "c": _C_LIKE, "cpp": _C_LIKE,
+    "javascript": _JS, "typescript": _JS, "tsx": _JS,
+    "go": _CHARLIT, "rust": _CHARLIT, "java": _CHARLIT, "kotlin": _CHARLIT,
+    "scala": _CHARLIT, "c": _CHARLIT, "cpp": _CHARLIT,
+    "swift": _SWIFT,
 }
+
+# A char/rune literal: a single char or an escape (incl. \xNN, \u{...}) in quotes.
+# A bare `'` not matching this (a Rust lifetime `'a`, a label) is ordinary text.
+_CHAR_LITERAL = re.compile(r"'(?:\\(?:x[0-9A-Fa-f]{1,8}|u\{[0-9A-Fa-f]+\}|.)|[^'\\\n])'")
 
 _EXT_TO_LANG = {
     ".py": "python", ".pyi": "python",
@@ -73,6 +88,7 @@ def extract_comments(text: str, profile: dict) -> list[tuple[int, str]]:
     block_pairs = profile.get("block", [])
     strings = profile.get("strings", ['"', "'"])
     triples = profile.get("triple", [])
+    char_quote = profile.get("char")
     comments: list[tuple[int, str]] = []
     i, n, line = 0, len(text), 1
 
@@ -93,6 +109,12 @@ def extract_comments(text: str, profile: dict) -> list[tuple[int, str]]:
                     line += 1
                 i += 1
             i += len(triple)
+            continue
+        if ch == char_quote:
+            m = _CHAR_LITERAL.match(text, i)
+            # A real char/rune literal: skip it. A bare tick (lifetime/label):
+            # advance one char so it never opens a phantom string.
+            i += m.end() - i if m else 1
             continue
         if ch in strings:
             i += 1

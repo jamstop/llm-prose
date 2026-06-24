@@ -122,6 +122,23 @@ class TestStringAwareness:
         out = lint(src, lang="javascript", rules={"notes-to-self"})
         assert len(out) == 1
 
+    def test_rust_lifetime_does_not_swallow_trailing_comment(self):
+        # Regression: a lone `'` (lifetime) used to open a phantom string and eat
+        # the `//` comment after it.
+        assert fired(lint("fn g(x: &'a str) {} // as requested\nlet y = 1;\n",
+                          lang="rust", rules={"notes-to-self"}))
+
+    def test_go_rune_literal_is_skipped(self):
+        # A real rune literal is consumed; the trailing comment still fires.
+        assert fired(lint("r := '\\n' // as requested\nx := 1\n",
+                          lang="go", rules={"notes-to-self"}))
+
+    def test_char_literal_with_slashes_is_not_a_comment(self):
+        # `'/'` is a char literal, not the start of a `//` comment.
+        out = lint("char c = '/'; // as requested\nint y = 1;\n",
+                   lang="c", rules={"notes-to-self"})
+        assert len(out) == 1
+
 
 # --- cross-cutting structural invariants ------------------------------------
 

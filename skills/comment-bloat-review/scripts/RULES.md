@@ -12,8 +12,14 @@ debatable, deslop stays silent and the model decides.
 A small character scanner walks the source once, skipping string and triple-
 quoted literals so a `#` or `//` inside a string never registers as a comment.
 Line comments (`#`, `//`, `--`) and block comments (`/* … */`) are recognized per
-language by file extension. In `--diff` mode the real file on disk is linted and
-findings are filtered to the added line numbers, so diffs keep full-file context.
+language by file extension. The `'` character is handled per language: a real
+string delimiter (Python, Ruby, JS/TS, shell, SQL), a char/rune literal validated
+by pattern (Rust, Go, C/C++, Java — so a bare lifetime tick `'a` is *not* mistaken
+for a string and doesn't swallow a trailing `//`), or absent entirely (Swift).
+In `--diff` mode the real file on disk is linted and findings are filtered to the
+added line numbers, so diffs keep full-file context.
+
+Requires Python 3.8+ (stdlib only; no third-party packages).
 
 ### R1 — notes-to-self / LLM residue  (action: delete)
 
