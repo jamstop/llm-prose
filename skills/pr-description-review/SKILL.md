@@ -31,7 +31,8 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 - LLM filler: "This PR makes several improvements...", marketing adjectives, bullet lists that echo the diff line by line.
 - Missing or buried interface/breaking changes.
 - Claims not backed by the diff (describes intent that wasn't implemented).
+- Sprawling, multi-purpose PR — unrelated changes bundled together. No description makes a grab-bag reviewable; flag it and suggest splitting into single-purpose PRs (a few hundred lines of diff is the usual rule of thumb).
 
 ## 4. Output
 
-Give a short verdict on what's missing or weak, then a ready-to-paste rewritten description using the headings above (drop headings that don't apply). Match the repo's PR template if one exists (`.github/PULL_REQUEST_TEMPLATE*`). Keep it tight — a reviewer should grasp the change in seconds. When asked, update the PR with `gh pr edit <n> --body`.
+Give a short verdict on what's missing or weak, then a ready-to-paste rewritten description using the headings above (drop headings that don't apply). Match the repo's PR template if one exists (`.github/PULL_REQUEST_TEMPLATE*`). If the PR is too large or mixed to review well, say so and suggest a split — a tighter description won't fix scope. Keep it tight — a reviewer should grasp the change in seconds. When asked, update the PR with `gh pr edit <n> --body`.

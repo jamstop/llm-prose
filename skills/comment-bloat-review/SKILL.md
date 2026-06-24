@@ -19,7 +19,7 @@ Focus on `+` lines. Pre-existing comments are out of scope unless the change mad
 
 - **Narration** — restates the code: `// increment counter`, `// import the module`, `// return result`. Delete.
 - **LLM residue** — the model talking to itself or the user: `// As requested...`, `// Note: I changed this to...`, `// This should now handle...`, `// Updated per feedback`, changelog-in-code. Delete.
-- **Doc dumps** — a giant header block or docstring restating signatures, or every param/return documented when names already say it. Cut to the non-obvious parts.
+- **Doc dumps** — a giant header block or docstring restating signatures, or every param/return documented when names already say it. For an internal symbol, cut it. For a public API where a doc comment is warranted, *tighten* rather than delete: lead with a one-sentence summary, drop the params/returns the names already cover, and keep only the sections that add information (why a value is returned, errors/throws, safety, an example). See *Further reading* in the README for the per-language conventions.
 - **Stale/contradictory** — comment no longer matches the changed code. Fix or delete.
 - **Commented-out code** — dead code left behind. Delete (it's in git history).
 - **Misplaced** — one big block where 1-2 inline notes at the tricky spots would serve better.
@@ -28,7 +28,7 @@ Focus on `+` lines. Pre-existing comments are out of scope unless the change mad
 
 A comment earns its tokens when it explains what code **cannot**: intent, *why* over *what*, non-obvious trade-offs, constraints/invariants, gotchas, links to context (ticket/RFC/bug), required API doc conventions, safety/security/legal notes.
 
-For each candidate, ask: **"What do I actually care about here — is this for a human or just the LLM's scratchpad?"** Keep human-relevant intent; cut scratchpad. Comments should be as short as possible while holding as much relevant info as possible, and live only where relevant.
+For each candidate, ask two things: **"What do I actually care about here — is this for a human or just the LLM's scratchpad?"** (keep human-relevant intent; cut scratchpad) and **"Could the code change so the comment isn't needed?"** (a clearer name or a named constant often beats a comment). Comments should be as short as possible while holding as much relevant info as possible, and live only where relevant.
 
 ## 4. Output
 

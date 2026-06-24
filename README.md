@@ -103,6 +103,13 @@ This is an LLM eval, so treat it as a smoke test, not a hard gate — it needs C
 
 Skills (`SKILL.md`) and slash commands are a shared format, so Cursor and Claude Code both load them; the two manifests (`.cursor-plugin/`, `.claude-plugin/`) coexist in one repo. The `.mdc` rule is the only Cursor-specific piece. Other tools (Cline, Copilot) lack native plugin parity — copy the Markdown into their conventions.
 
+## Further reading
+
+The rubrics distill a few canonical sources — read these for the long form:
+
+- **Comments** — [Go Doc Comments](https://go.dev/doc/comment) (the "improve the code so the comment isn't needed" ethos), [TigerBeetle TIGER_STYLE](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) (comments explain *why*), and [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/) + [Rust RFC 505](https://rust-lang.github.io/rfcs/0505-api-comment-conventions.html) (summary-first doc comments, structured sections).
+- **PR descriptions** — [GitHub: how to write the perfect pull request](https://github.blog/developer-skills/github/how-to-write-the-perfect-pull-request/), [opensource.com: anatomy of a perfect PR](https://opensource.com/article/18/6/anatomy-perfect-pull-request) (small, single-purpose PRs), and [Chris Beams: how to write a git commit message](https://cbea.ms/git-commit/).
+
 ## Status
 
 Manifests and frontmatter are validated (`scripts/validate.sh`, plus Claude's `plugin validate`). The behavioral eval passes, and the `review-prose` skill has been confirmed loading and self-describing in the Cursor CLI via the Claude install. The `disable-model-invocation` rubric skills surface only when named (by `review-prose` or a `/prose*` command), which is intended.
