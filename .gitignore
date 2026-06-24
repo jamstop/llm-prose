@@ -1,7 +1,6 @@
 .DS_Store
 
-# deslop (Python tool)
-tools/deslop/.venv/
+# deslop is stdlib-only and bundled in the skill; only transient python caches.
 **/__pycache__/
 **/.pytest_cache/
 *.egg-info/

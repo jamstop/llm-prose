@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Thin wrapper around the deslop Python tool. Prefers the tool's local venv
-# (tools/deslop/.venv) and falls back to whatever python3 has it installed.
+# Convenience shim for running deslop from the repo root. The tool itself is a
+# single stdlib-only file bundled in the skill (no install, no venv); this just
+# forwards to it with the system python3.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-venv_py="$root/tools/deslop/.venv/bin/python"
-if [ -x "$venv_py" ]; then
-  exec "$venv_py" -m deslop "$@"
-fi
-exec python3 -m deslop "$@"
+exec python3 "$root/skills/comment-bloat-review/scripts/deslop.py" "$@"
