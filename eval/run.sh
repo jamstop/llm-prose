@@ -3,10 +3,12 @@
 # Cursor CLI against a fixture with planted comments, then checks the verdict.
 #
 # Each comment in the fixture carries a sentinel token:
-#   CMT_B* = bloat that SHOULD be flagged (narration, notes-to-self, dead code, doc dump)
+#   CMT_B* = bloat to DELETE (narration, notes-to-self, dead code, trivial doc)
+#   CMT_T* = warranted public-API doc to TIGHTEN, not delete (over-documented)
 #   CMT_K* = comments that earn their place and should be KEPT
 #
-# Pass = every B* flagged (recall) and no K* flagged (precision).
+# Pass = every B*/T* flagged (recall), each T* flagged as "tighten" (action), and
+# no K* flagged (precision).
 #
 # Usage:  bash eval/run.sh            # default model
 #         MODEL=sonnet-4-thinking bash eval/run.sh
@@ -16,15 +18,18 @@ cd "$(dirname "$0")" || exit 2
 
 PLUGIN="${PLUGIN_DIR:-$(cd .. && pwd)}"
 SAMPLE="$(cat fixtures/sample.py)"
-BLOAT=(CMT_B1 CMT_B2 CMT_B3 CMT_B4)
-KEEP=(CMT_K1 CMT_K2)
+DELETE=(CMT_B1 CMT_B2 CMT_B3 CMT_B4)
+TIGHTEN=(CMT_T1)
+KEEP=(CMT_K1 CMT_K2 CMT_K3)
 RUNS="${RUNS:-1}"
 MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
 
 command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; exit 2; }
 
 PROMPT="Use the comment-bloat-review skill from the loaded plugin to review ONLY the comments in this file.
-Each comment contains a token like CMT_XX. For every comment you would DELETE or TIGHTEN (flag as bloat), print exactly one line: FLAG: <that token>. Do NOT flag comments that earn their place. Print only FLAG: lines, nothing else.
+Each comment contains a token like CMT_XX. For every comment you would flag, print exactly one line:
+FLAG: <token> <delete|tighten>
+Use 'tighten' when the comment is a warranted public-API doc that is merely over-documented (keep a one-line summary, cut the rest); use 'delete' when the whole comment should go. Do NOT flag comments that earn their place. Print only FLAG: lines, nothing else.
 
 \`\`\`python
 $SAMPLE
@@ -34,19 +39,27 @@ pass_runs=0
 for i in $(seq 1 "$RUNS"); do
   echo "=== run $i/$RUNS ==="
   OUT=$(cursor-agent --plugin-dir "$PLUGIN" ${MODEL_ARG[@]+"${MODEL_ARG[@]}"} --trust --force -p "$PROMPT" --output-format text 2>/dev/null)
-  FLAGGED=$(printf '%s\n' "$OUT" | grep -iE '^[[:space:]]*FLAG:' | grep -oE 'CMT_[A-Z0-9]+' | sort -u)
+  FLAG_LINES=$(printf '%s\n' "$OUT" | grep -iE '^[[:space:]]*FLAG:')
+  flagged()   { printf '%s\n' "$FLAG_LINES" | grep -q "$1"; }
+  tightened() { printf '%s\n' "$FLAG_LINES" | grep "$1" | grep -qi 'tighten'; }
 
-  miss=0; fp=0
-  for b in "${BLOAT[@]}"; do
-    if printf '%s\n' "$FLAGGED" | grep -qx "$b"; then echo "  caught  $b"; else echo "  MISSED  $b"; miss=$((miss+1)); fi
+  miss=0; fp=0; wrongact=0
+  for d in "${DELETE[@]}"; do
+    if flagged "$d"; then echo "  caught   $d"; else echo "  MISSED   $d"; miss=$((miss+1)); fi
+  done
+  for t in "${TIGHTEN[@]}"; do
+    if flagged "$t"; then
+      if tightened "$t"; then echo "  tighten  $t"; else echo "  WRONGACT $t (flagged, not as tighten)"; wrongact=$((wrongact+1)); fi
+    else echo "  MISSED   $t"; miss=$((miss+1)); fi
   done
   for k in "${KEEP[@]}"; do
-    if printf '%s\n' "$FLAGGED" | grep -qx "$k"; then echo "  FALSE+  $k"; fp=$((fp+1)); else echo "  kept    $k"; fi
+    if flagged "$k"; then echo "  FALSE+   $k"; fp=$((fp+1)); else echo "  kept     $k"; fi
   done
 
-  recall=$(( (${#BLOAT[@]} - miss) ))
-  echo "  recall ${recall}/${#BLOAT[@]} bloat, ${fp} false positive(s)"
-  if [ "$miss" -eq 0 ] && [ "$fp" -eq 0 ]; then echo "  -> PASS"; pass_runs=$((pass_runs+1)); else echo "  -> FAIL"; fi
+  total=$(( ${#DELETE[@]} + ${#TIGHTEN[@]} ))
+  recall=$(( total - miss ))
+  echo "  recall ${recall}/${total} bloat, ${wrongact} wrong-action, ${fp} false positive(s)"
+  if [ "$miss" -eq 0 ] && [ "$fp" -eq 0 ] && [ "$wrongact" -eq 0 ]; then echo "  -> PASS"; pass_runs=$((pass_runs+1)); else echo "  -> FAIL"; fi
 done
 
 echo "------------------------------------------------------------"

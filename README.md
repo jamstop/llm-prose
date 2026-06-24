@@ -82,7 +82,7 @@ Out-of-band releases (no PR):
 
 Run `bash scripts/validate.sh`. CI (`.github/workflows/validate.yml`) runs it on every push and PR, so the remote can't go broken before you pull it.
 
-**Behavioral eval** (`eval/run.sh`) — drives the real `comment-bloat-review` skill through the Cursor CLI against `eval/fixtures/sample.py`, which has comments tagged with sentinels: `CMT_B*` are planted bloat that must be flagged, `CMT_K*` are comments that must be kept. It scores recall (all bloat caught) and precision (no good comments flagged):
+**Behavioral eval** (`eval/run.sh`) — drives the real `comment-bloat-review` skill through the Cursor CLI against `eval/fixtures/sample.py`, which has comments tagged with sentinels: `CMT_B*` are planted bloat that must be flagged for deletion, `CMT_T*` are warranted public-API docs that must be flagged for *tightening* (not deleted), and `CMT_K*` are comments that must be kept. It scores recall (all bloat caught), action (tighten vs delete), and precision (no good comments flagged):
 
 ```bash
 bash eval/run.sh              # one run, default model

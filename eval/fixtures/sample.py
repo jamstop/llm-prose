@@ -30,3 +30,31 @@ def to_cents(dollars):
         the cents.
     """
     return int(dollars * 100)
+
+
+def retry_with_backoff(operation, max_attempts=5):
+    """CMT_T1 Run an operation, retrying with exponential backoff.
+
+    Args:
+        operation: the operation to run.
+        max_attempts: the maximum number of attempts.
+    Returns:
+        the operation's result.
+
+    Sleeps 2**n seconds between tries and re-raises the last error if every
+    attempt fails, so callers must treat it as potentially slow and fallible.
+    """
+    delay = 1
+    for n in range(max_attempts):
+        try:
+            return operation()
+        except Exception:
+            if n == max_attempts - 1:
+                raise
+            time.sleep(delay)
+            delay *= 2
+
+
+def parse_iso8601(text):
+    """CMT_K3 Parse an ISO 8601 timestamp; assumes UTC when the string carries no offset."""
+    return _parse(text)
