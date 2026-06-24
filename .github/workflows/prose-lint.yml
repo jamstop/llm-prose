@@ -1,0 +1,26 @@
+name: prose-lint
+
+on:
+  push:
+    paths:
+      - 'tools/prose-lint/**'
+      - '.github/workflows/prose-lint.yml'
+  pull_request:
+    paths:
+      - 'tools/prose-lint/**'
+      - '.github/workflows/prose-lint.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        working-directory: tools/prose-lint
+        run: pip install -e ".[test]"
+      - name: Test
+        working-directory: tools/prose-lint
+        run: python -m pytest -q

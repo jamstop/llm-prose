@@ -15,6 +15,8 @@ Audit only the **added/changed** lines in a diff for comment bloat and over-docu
 
 Focus on `+` lines. Pre-existing comments are out of scope unless the change made them stale.
 
+**Deterministic pre-pass (optional).** If the repo ships `prose-lint` (`scripts/prose-lint`), run it on the diff first — `git diff | scripts/prose-lint --diff` (or `gh pr diff <n> | scripts/prose-lint --diff`). It flags the unambiguous cases reproducibly: notes-to-self / LLM residue, commented-out code, and docstrings whose Args/Returns restate the signature. Treat its hits as already decided and spend your judgment on the rest (narration, intent, why-over-what, stale) that it deliberately doesn't cover.
+
 ## 2. Flag these patterns
 
 - **Narration** — restates the code: `// increment counter`, `// import the module`, `// return result`. Delete.
