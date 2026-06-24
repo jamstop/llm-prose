@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Thin wrapper around the prose-lint Python tool. Prefers the tool's local venv
+# (tools/prose-lint/.venv) and falls back to whatever python3 has it installed.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+venv_py="$root/tools/prose-lint/.venv/bin/python"
+if [ -x "$venv_py" ]; then
+  exec "$venv_py" -m prose_lint "$@"
+fi
+exec python3 -m prose_lint "$@"
