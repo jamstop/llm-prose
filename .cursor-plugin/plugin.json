@@ -1,6 +1,6 @@
 {
   "name": "llm-prose",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Reviews the prose layer of LLM-authored changes: strips bloated/AI-residue comments and rewrites weak PR descriptions (What/Why/How + interface changes). Includes a write-time rule to prevent bloat up front.",
   "author": {
     "name": "jamstop"
