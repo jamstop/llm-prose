@@ -96,6 +96,19 @@ class TestR2CommentedOutCode:
         src = "func f() {\n    // total = amount * 100\n    let x = 1\n}\n"
         assert fired(lint(src, lang="swift", rules={"commented-out-code"}))
 
+    def test_does_not_flag_key_equals_prose(self):
+        # Regression: `key = value` prose ("default = usd") is not commented-out
+        # code. The RHS must carry a code signal (op/call/number/quote/member).
+        for c in ("// default = usd\n",
+                  "// mode = fast and safe\n",
+                  "// timeout = how long we wait\n"):
+            assert not fired(lint(c + "let y = 1\n", lang="swift",
+                                  rules={"commented-out-code"})), c
+
+    def test_fires_inside_block_comment(self):
+        src = "/*\n total = amount * 100\n*/\nlet y = 1\n"
+        assert fired(lint(src, lang="swift", rules={"commented-out-code"}))
+
 
 # --- string-awareness: markers inside literals must not fire ----------------
 

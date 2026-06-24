@@ -181,6 +181,12 @@ _CODE_ASSIGN = re.compile(
     r"^[A-Za-z_$][\w.$<>\[\]]*(?:\s+[A-Za-z_$][\w.$<>\[\]]*)?\s*(?:[-+*/%&|^]?=(?!=)|:=)\s*\S"
 )
 _CODE_CALL = re.compile(r"^[A-Za-z_$][\w.$]*\s*\(.*\)\s*;?\s*$")
+_ASSIGN_OP = re.compile(r"[-+*/%&|^]?=(?!=)|:=")
+# The right-hand side must look like an expression, not prose: a call/index, an
+# operator, a member access, a quote, or a number. Without this, `key = value`
+# prose ("default = usd", "timeout = how long we wait") read as commented-out
+# code — a precision miss this tool exists to avoid.
+_RHS_CODE_SIGNAL = re.compile(r"[(\[]|[-+*/%<>&|^~]|\.\w|['\"]|\d")
 
 
 def _py_is_code(fragment: str) -> bool:
@@ -202,12 +208,19 @@ def _py_is_code(fragment: str) -> bool:
 
 
 def _line_is_code(line: str, language: str) -> bool:
-    frag = line.strip().rstrip(";")
+    stripped = line.strip()
+    frag = stripped.rstrip(";")
     if len(frag) < 4:
         return False
     if language == "python":
-        return _py_is_code(line.strip())
-    return bool(_CODE_ASSIGN.match(frag) or _CODE_CALL.match(line.strip()))
+        return _py_is_code(stripped)
+    if _CODE_CALL.match(stripped):
+        return True
+    if _CODE_ASSIGN.match(frag):
+        parts = _ASSIGN_OP.split(frag, maxsplit=1)
+        rhs = parts[1] if len(parts) > 1 else ""
+        return bool(_RHS_CODE_SIGNAL.search(rhs))
+    return False
 
 
 def _is_commented_code(text: str, language: str) -> bool:
@@ -237,7 +250,7 @@ _RULES = {
     "notes-to-self": (_is_residue, "delete",
                       "comment is a note-to-self / LLM residue; delete"),
     "commented-out-code": (_is_commented_code, "delete",
-                           "comment body parses as code; delete (it's in git history)"),
+                           "comment body reads as code; delete (it's in git history)"),
 }
 
 
