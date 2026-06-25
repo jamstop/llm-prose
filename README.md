@@ -10,7 +10,7 @@ LLMs write code well and write *about* code badly. They leave their working memo
 
 **Comments** should be as short as possible while carrying as much relevant information as possible, and exist only where relevant — never as one giant block. Before keeping one, ask: *"What do I actually care about here — is this for a human, or just the LLM's scratchpad?"* Keep intent, *why* over *what*, trade-offs, constraints, gotchas, links to context, and required public-API docs. Cut narration, notes-to-self (`// as requested`, `// updated to handle X`), commented-out code, and doc dumps.
 
-**Descriptions** should answer **What / Why / How** and surface **interface and breaking changes** — the things a reviewer and a future reader actually need. The *Why* is the part LLMs skip and the part that matters most; the tool **never invents it** — if the motivation isn't in the diff, a ticket, or the branch context, it asks or leaves a placeholder rather than fabricating one.
+**Descriptions** should answer **What / Why / How** and surface **interface and breaking changes** — the things a reviewer and a future reader actually need. The *Why* is the part LLMs skip and the part that matters most; the tool **never invents it** — if the motivation isn't in the diff, a ticket, or the branch context, it asks or leaves a placeholder rather than fabricating one. De-slopping is the floor: the rewrite is *crafted* to be read — a strong lead, scannable structure, a behavior/interface callout. Structure and formatting serve the reader and are welcome; the sin is decoration over empty content, not headings or bullets.
 
 Review is the backstop; the bundled rule does prevention. The plugin holds itself to the same bar — its own files are kept lean.
 
@@ -90,7 +90,14 @@ RUNS=5 bash eval/run.sh       # repeat to gauge flakiness
 MODEL=sonnet-4-thinking bash eval/run.sh
 ```
 
-The fixture's slop is modeled on real in-the-wild patterns (narration, residue, doc dumps) catalogued in [`docs/anti-patterns.md`](docs/anti-patterns.md). For the description pass, `eval/fixtures/pr_description_stately.md` (a "stately" AI-slop write-up) and `pr_description_good.md` (its tightened counterpart) are a dogfooding pair — run `/prose-pr-description` against them and confirm the verdict.
+The fixture's slop is modeled on real in-the-wild patterns (narration, residue, doc dumps) catalogued in [`docs/anti-patterns.md`](docs/anti-patterns.md).
+
+The description pass has its own behavioral eval (`eval/run_description.sh`) — it drives `pr-description-review` to rewrite a weak "stately" draft (`eval/fixtures/pr_description_stately.md`) given the real diff (`pr_description_change.diff`) and Why, then scores the rewrite on four axes: **precision** (no AI filler survives), **substance** (the real Why is present, not invented away), **behavior** (the interface/behavior change is surfaced), and **structure** (a lead + scannable sections). `pr_description_good.md` is the crafted target the rewrite should approach.
+
+```bash
+bash eval/run_description.sh        # one run, default model
+RUNS=3 bash eval/run_description.sh # repeat to gauge flakiness
+```
 
 This is an LLM eval, so treat it as a smoke test, not a hard gate — it needs CLI auth and network, which is why it's not in CI. Add fixtures as you find comment patterns the skill mishandles.
 
