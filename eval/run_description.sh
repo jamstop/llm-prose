@@ -24,8 +24,9 @@ MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
 
 command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; exit 2; }
 
-# Banned AI-filler — if any survive the rewrite, precision failed.
-BANNED='several improvements|various other|more seamless|robustness and maintainability|ensure a more|🚀|✨|🎉|✅'
+# Banned AI-filler — content-free phrases. NOT emoji or formatting: per the skill,
+# form serves the reader and isn't slop, so we only flag empty phrasing here.
+BANNED='several improvements|various other|more seamless|robustness and maintainability|ensure a more'
 
 PROMPT="Use the pr-description-review skill from the loaded plugin to REWRITE the PR description below to its 'beautiful' bar (strong lead, scannable structure, real Why, behavior callout). Output ONLY the rewritten description markdown — no verdict, no preamble, no code fences around the whole thing.
 
