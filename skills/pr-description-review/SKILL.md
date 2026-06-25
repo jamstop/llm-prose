@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # PR Description Review
 
-Judge a PR description against its actual diff and rewrite it to be useful to a reviewer.
+Judge a PR description against its actual diff, then **compose** one that is genuinely good to read — not just stripped of slop. Two distinct jobs: a short *verdict* (what's weak) and a *crafted rewrite* (what a reviewer would be glad to open). Spend real effort on the rewrite; that's the deliverable.
 
 ## 1. Gather
 
@@ -33,6 +33,45 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 - Claims not backed by the diff (describes intent that wasn't implemented).
 - Sprawling, multi-purpose PR — unrelated changes bundled together. No description makes a grab-bag reviewable; flag it and suggest splitting into single-purpose PRs (a few hundred lines of diff is the usual rule of thumb).
 
-## 4. Output
+## 4. What a beautiful description looks like
 
-Give a short verdict on what's missing or weak, then a ready-to-paste rewritten description using the headings above (drop headings that don't apply). Match the repo's PR template if one exists (`.github/PULL_REQUEST_TEMPLATE*`). If the PR is too large or mixed to review well, say so and suggest a split — a tighter description won't fix scope. Keep it tight — a reviewer should grasp the change in seconds. When asked, update the PR with `gh pr edit <n> --body`.
+De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Aim for these, in priority order:
+
+- **A strong lead.** One or two sentences that state what changed *and* why it matters, before any heading. The reviewer should understand the gist from the first line.
+- **Scannable structure.** Short sections and tight bullets beat a wall of prose. For a refactor or behavior-sensitive change, a **"Preserved / behavior change"** callout is gold — it answers the reviewer's first fear. For interface changes, a small table (symbol → change) reads faster than prose.
+- **Confident, plain voice.** Direct and specific. "Cuts the hot path to one lookup per minute" beats "improves performance."
+
+**Form serves the reader — it is not slop.** Headings, bullets, a table, even an occasional emoji *if the repo's culture uses them* are good when they aid scanning. The sin is never structure; it's **decoration over empty content** — adjectives with no facts, sections that echo the diff, polish that hides the absence of a Why. Judge by substance-per-line, not by formatting. Mirror the repo's house style and `PULL_REQUEST_TEMPLATE` when one exists; adapt to the team's look rather than imposing one.
+
+**When the Why is genuinely missing**, don't fabricate it and don't dump a bare `TODO`. Mine the branch name and commits first (`git log <base>..HEAD`). If it's still unknown, write a clean, specific prompt to the author — e.g. `**Why:** _(author: what regression/ticket/decision drove this? the diff doesn't say.)_` — so the gap is obvious and easy to fill.
+
+### Exemplar (structured, substantive, zero fluff)
+
+```markdown
+## Cache permission lookups on the auth hot path
+
+Every authenticated request re-queried the permissions table, adding ~40ms p50.
+This adds a 60s in-memory cache keyed by (user, resource), so a user's checks hit
+the DB at most once a minute instead of once a request.
+
+**Why:** PERF-812 — permission checks were the top span in the auth trace; this
+was the cheapest large win.
+
+**How**
+- `PermissionCache` (TTLCache, 60s) wraps `PermissionStore.check`.
+- Invalidated on role change via the existing `role.updated` event — no stale grants.
+
+**Behavior change**
+- No API change. Permission edits now take up to 60s to propagate (was instant).
+  Acceptable per PERF-812; called out for security review.
+
+**Verify**
+- Load test `/api/*`: p50 40ms → 6ms.
+- Change a role, confirm access updates within 60s.
+```
+
+Note what makes it good: the lead carries the whole story, the Why is real and cited, the *Behavior change* section surfaces the one thing a reviewer must not miss, and nothing is decorative.
+
+## 5. Output
+
+Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant. Drop headings that don't apply; match the repo template if present. If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
