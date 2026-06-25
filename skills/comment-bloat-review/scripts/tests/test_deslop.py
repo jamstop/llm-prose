@@ -78,6 +78,21 @@ class TestR2CommentedOutCode:
         assert not fired(lint("# TODO: total = apply_discount(total)\nx = 1\n",
                               rules={"commented-out-code"}))
 
+    def test_does_not_flag_tool_directives(self):
+        # Regression from dogfooding a real PR: directive comments have a
+        # key=value / key: value shape that used to read as commented-out code.
+        cases = [
+            ("# shellcheck disable=SC2012  # ls -t is simplest\nx = 1\n", "shell"),
+            ("# noqa: E501\nx = 1\n", "python"),
+            ("# type: ignore[arg-type]\nx = 1\n", "python"),
+            ("# pylint: disable=invalid-name\nx = 1\n", "python"),
+            ("// eslint-disable-next-line no-console\nconst y = 1;\n", "javascript"),
+            ("// NOLINTNEXTLINE(readability-magic-numbers)\nint y = 1;\n", "cpp"),
+            ("// @ts-expect-error legacy shim\nconst y = 1;\n", "typescript"),
+        ]
+        for src, lang in cases:
+            assert not fired(lint(src, lang=lang, rules={"commented-out-code"})), src
+
     def test_does_not_flag_equality_comparison(self):
         # `==` is not an assignment; a comment musing about a condition is prose.
         assert not fired(lint("// fails when count == 0 on the first pass\nint x = 1;\n",

@@ -196,6 +196,27 @@ def _is_residue(text: str) -> bool:
 
 _PROSE_MARKER = re.compile(r"^(TODO|FIXME|NOTE|HACK|XXX|WARNING|WARN)\b", re.IGNORECASE)
 
+# Tool directives / pragmas are special comments, not commented-out code — but
+# many have a `key=value` or `key: value` shape that reads as code (e.g.
+# `shellcheck disable=SC2012`, `type: ignore`). Skip them. (Found by dogfooding
+# on a real PR, where `# shellcheck disable=SC2012` was flagged as dead code.)
+_DIRECTIVE = re.compile(
+    r"""^(?:
+        shellcheck\b
+      | noqa\b
+      | type:\s*ignore\b
+      | (?:pylint|flake8|mypy|ruff|pragma|isort|coverage|yapf|swiftlint):
+      | fmt:\s*(?:on|off)\b
+      | yamllint\b
+      | nolint\b | nolintnextline\b
+      | istanbul\s+ignore\b
+      | (?:biome|prettier)-ignore\b
+      | eslint-(?:disable|enable)
+      | @ts-(?:ignore|expect-error|nocheck)\b
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
 # Heuristic code signals for non-Python languages. An assignment (one `=`, not
 # `==`/`<=`/etc., with an optional type/decl word: `const x =`, `int n =`) or a
 # bare call statement. Python is parsed precisely with stdlib `ast` instead.
@@ -245,11 +266,17 @@ def _line_is_code(line: str, language: str) -> bool:
     return False
 
 
+def _is_exempt(line: str) -> bool:
+    """A prose marker (TODO/...) or a tool directive (shellcheck/noqa/...) — not code."""
+    return bool(_PROSE_MARKER.match(line) or _DIRECTIVE.match(line))
+
+
 def _is_commented_code(text: str, language: str) -> bool:
     cleaned = _clean(text)
-    if not cleaned or _PROSE_MARKER.match(cleaned):
+    if not cleaned or _is_exempt(cleaned):
         return False
-    return any(_line_is_code(ln, language) for ln in cleaned.splitlines() if ln.strip())
+    return any(_line_is_code(ln, language) for ln in cleaned.splitlines()
+               if ln.strip() and not _is_exempt(ln.strip()))
 
 
 # --- findings & rule runners -------------------------------------------------
