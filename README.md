@@ -39,7 +39,12 @@ claude plugin marketplace add jamstop/llm-prose   # private repo OK (uses your g
 claude plugin install llm-prose@llm-prose
 ```
 
-Restart/reload each tool once to pick it up. The `review-prose` skill then auto-activates on relevant tasks, and the `/prose*` commands are available explicitly. Updates: set `"autoUpdate": true` on the marketplace in `~/.claude/plugins/known_marketplaces.json` (tracks the remote), or run `claude plugin update llm-prose@llm-prose`.
+Restart/reload each tool once to pick it up. The `review-prose` skill then auto-activates on relevant tasks, and the `/prose*` commands are available explicitly.
+
+**Updating — read this, it's tool-specific.** `"autoUpdate": true` (in `~/.claude/plugins/known_marketplaces.json`) is honored **only by Claude Code**, on launch. **Cursor does not auto-update** — it loads whatever version is pinned in `~/.claude/plugins/installed_plugins.json` and never checks the remote itself. So:
+
+- **Claude Code:** with `autoUpdate` on, a new session pulls the latest. Or force it: `claude plugin update llm-prose@llm-prose`.
+- **Cursor (IDE or CLI):** run `claude plugin update llm-prose@llm-prose` explicitly, **then restart Cursor**. Releases are version-keyed, so a session already running stays on its loaded version until you restart. (Want hands-off? Run that update command from a login hook or alias — Cursor won't do it for you.)
 
 > Why this and not a Cursor marketplace: Cursor's own marketplace is public-repo + manual review, and Team Marketplaces are Teams/Enterprise + org-scoped. The Claude plugin layer is the practical cross-tool path for a private repo.
 
@@ -92,7 +97,13 @@ MODEL=sonnet-4-thinking bash eval/run.sh
 
 The fixture's slop is modeled on real in-the-wild patterns (narration, residue, doc dumps) catalogued in [`docs/anti-patterns.md`](docs/anti-patterns.md).
 
-The description pass has its own behavioral eval (`eval/run_description.sh`) — it drives `pr-description-review` to rewrite a weak "stately" draft (`eval/fixtures/pr_description_stately.md`) given the real diff (`pr_description_change.diff`) and Why, then scores the rewrite on four axes: **precision** (no AI filler survives), **substance** (the real Why is present, not invented away), **behavior** (the interface/behavior change is surfaced), and **structure** (a lead + scannable sections). `pr_description_good.md` is the crafted target the rewrite should approach.
+The description pass has its own behavioral eval (`eval/run_description.sh`) — it drives `pr-description-review` to rewrite weak drafts against real diffs, then scores the output. Three scenarios exercise different parts of the rubric:
+
+- **session** — a real Why is available: the rewrite must use it, surface the behavior change, and read well (precision / substance / behavior / structure). `pr_description_good.md` is the crafted target it should approach.
+- **thin-why** — the motivation is genuinely undiscoverable: the rewrite must **not fabricate** a Why, leaving an explicit author-prompt placeholder instead.
+- **iface** — a refactor with a real signature change: the rewrite must surface the interface change for consumers, not bury it.
+
+Scoring is on qualities, not exact strings: **precision** (no AI filler survives), **substance** (real Why present, or correctly deferred), **behavior/interface** (the consumer-facing change is surfaced), and **structure** (a lead + scannable sections).
 
 ```bash
 bash eval/run_description.sh        # one run, default model
