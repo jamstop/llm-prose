@@ -102,8 +102,9 @@ The description pass has its own behavioral eval (`eval/run_description.sh`) —
 - **session** — a real Why is available: the rewrite must use it, surface the behavior change, and read well (precision / substance / behavior / structure). `pr_description_good.md` is the crafted target it should approach.
 - **thin-why** — the motivation is genuinely undiscoverable: the rewrite must **not fabricate** a Why, leaving an explicit author-prompt placeholder instead.
 - **iface** — a refactor with a real signature change: the rewrite must surface the interface change for consumers, not bury it.
+- **claims** — an overclaiming draft (asserts unit tests + a caching layer the diff doesn't contain): the rewrite must verify claims against the diff and **drop the phantom ones**, keeping only what the code backs.
 
-Scoring is on qualities, not exact strings: **precision** (no AI filler survives), **substance** (real Why present, or correctly deferred), **behavior/interface** (the consumer-facing change is surfaced), and **structure** (a lead + scannable sections).
+Scoring is on qualities, not exact strings: **precision** (no AI filler survives), **substance** (real Why present, or correctly deferred), **behavior/interface** (the consumer-facing change is surfaced), **claims-verified** (no invented tests/features survive), and **structure** (a lead + scannable sections).
 
 ```bash
 bash eval/run_description.sh        # one run, default model
