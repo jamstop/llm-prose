@@ -231,6 +231,24 @@ _ASSIGN_OP = re.compile(r"[-+*/%&|^]?=(?!=)|:=")
 # code — a precision miss this tool exists to avoid.
 _RHS_CODE_SIGNAL = re.compile(r"[(\[]|[-+*/%<>&|^~]|\.\w|['\"]|\d")
 
+# A comment that reads as an English sentence is prose, not commented-out code —
+# even when it carries an `=` and a parenthetical that looks expression-ish, e.g.
+# "Pass = every run. Smoke test (LLM + network), not a gate." Gate the non-Python
+# assignment heuristic on these natural-language tells. (Python is parsed by ast,
+# which already rejects prose, so this only guards the regex path.)
+_PROSE_SENTENCE = re.compile(
+    r"[a-z]\.\s+[A-Z]"                                              # "... run. Smoke ..."
+    r"|[a-z]{2}\.\s*$"                                              # "... a CI gate."
+    r"|,\s+(?:not|but|so|which|because|instead|rather|unless|otherwise)\b"
+)
+
+# An env-var-prefixed command (`MODEL=foo bash run.sh`, `DEBUG=1 ./x`) inside a
+# comment is almost always a usage example, not dead code. A real one-line
+# assignment (`x = foo()`, `total=amount*100`) has no trailing command token, so
+# it stays caught — the `=` must be glued to the name and a second token must
+# follow a space.
+_USAGE_ENV = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S+\s+\S")
+
 
 def _py_is_code(fragment: str) -> bool:
     import ast
@@ -257,6 +275,8 @@ def _line_is_code(line: str, language: str) -> bool:
         return False
     if language == "python":
         return _py_is_code(stripped)
+    if _PROSE_SENTENCE.search(stripped):
+        return False
     if _CODE_CALL.match(stripped):
         return True
     if _CODE_ASSIGN.match(frag):
@@ -267,8 +287,9 @@ def _line_is_code(line: str, language: str) -> bool:
 
 
 def _is_exempt(line: str) -> bool:
-    """A prose marker (TODO/...) or a tool directive (shellcheck/noqa/...) — not code."""
-    return bool(_PROSE_MARKER.match(line) or _DIRECTIVE.match(line))
+    """A prose marker (TODO/...), a tool directive (shellcheck/noqa/...), or an
+    env-prefixed usage example (`VAR=val cmd`) — none are commented-out code."""
+    return bool(_PROSE_MARKER.match(line) or _DIRECTIVE.match(line) or _USAGE_ENV.match(line))
 
 
 def _is_commented_code(text: str, language: str) -> bool:

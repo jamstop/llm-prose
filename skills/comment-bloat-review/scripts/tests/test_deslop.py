@@ -120,6 +120,31 @@ class TestR2CommentedOutCode:
             assert not fired(lint(c + "let y = 1\n", lang="swift",
                                   rules={"commented-out-code"})), c
 
+    def test_does_not_flag_prose_sentence_with_parenthetical(self):
+        # Regression from self-dogfooding: a prose sentence whose `=` and
+        # parenthetical look expression-ish ("Pass = ... (LLM + network), not a
+        # gate.") must not read as code. Natural-language tells gate the heuristic.
+        for c in ("# Pass = every scenario passes every run. Smoke test (LLM + network), not a CI gate.\n",
+                  "# Score = correctness (precision + recall), not raw counts.\n"):
+            assert not fired(lint(c + "x=1\n", lang="shell",
+                                  rules={"commented-out-code"})), c
+
+    def test_does_not_flag_env_prefixed_usage_example(self):
+        # Regression: an env-var-prefixed command in a comment is a usage example
+        # (`MODEL=foo bash run.sh`), not dead code. A real assignment with no
+        # trailing command token still fires (see config-assign test below).
+        for c in ("#         MODEL=sonnet-4-thinking bash eval/run_description.sh\n",
+                  "# RUNS=3 bash eval/run_description.sh\n",
+                  "# DEBUG=1 ./run.sh --verbose\n"):
+            assert not fired(lint(c + "x=1\n", lang="shell",
+                                  rules={"commented-out-code"})), c
+
+    def test_still_flags_real_config_assignment(self):
+        # Guard against over-exemption: a bare `NAME = value` config line (no
+        # trailing command, real numeric RHS) is still commented-out code.
+        assert fired(lint("# MAX_RETRIES = 5\nx=1\n", lang="shell",
+                          rules={"commented-out-code"}))
+
     def test_fires_inside_block_comment(self):
         src = "/*\n total = amount * 100\n*/\nlet y = 1\n"
         assert fired(lint(src, lang="swift", rules={"commented-out-code"}))
