@@ -30,7 +30,7 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 - Pure file/change enumeration with no Why.
 - LLM filler: "This PR makes several improvements...", marketing adjectives, bullet lists that echo the diff line by line.
 - Missing or buried interface/breaking changes.
-- Claims not backed by the diff (describes intent that wasn't implemented).
+- Claims not backed by the diff — intent that wasn't implemented, or "added tests" with no test file in the diff (see step 5).
 - Sprawling, multi-purpose PR — unrelated changes bundled together. No description makes a grab-bag reviewable; flag it and suggest splitting into single-purpose PRs (a few hundred lines of diff is the usual rule of thumb).
 
 ## 4. What a beautiful description looks like
@@ -38,8 +38,9 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Aim for these, in priority order:
 
 - **A strong lead.** One or two sentences that state what changed *and* why it matters, before any heading. The reviewer should understand the gist from the first line.
-- **Scannable structure.** Short sections and tight bullets beat a wall of prose. For a refactor or behavior-sensitive change, a **"Preserved / behavior change"** callout is gold — it answers the reviewer's first fear. For interface changes, a small table (symbol → change) reads faster than prose.
-- **Confident, plain voice.** Direct and specific. "Cuts the hot path to one lookup per minute" beats "improves performance."
+- **Scannable structure.** Short sections and tight bullets beat a wall of prose. For a refactor or behavior-sensitive change, a **"Preserved / behavior change"** callout is gold — it answers the reviewer's first fear. For interface changes, a small table (symbol → change) reads faster than prose. Pull a notable bug-fix into its own line rather than burying it in a file list — it signals the PR handles edge cases.
+- **Backtick every symbol, file, and path** so they pop from prose — `fetch_user`, `auth.py`, `--include-deleted`, not the bare words. A scannable description is half formatting discipline.
+- **Confident, plain voice with real numbers.** Direct and specific. "Cuts the hot path to one lookup per minute" beats "improves performance"; "12 new tests, all passing" beats "full coverage."
 
 **Form serves the reader — it is not slop.** Headings, bullets, a table, even an occasional emoji *if the repo's culture uses them* are good when they aid scanning. The sin is never structure; it's **decoration over empty content** — adjectives with no facts, sections that echo the diff, polish that hides the absence of a Why. Judge by substance-per-line, not by formatting. Mirror the repo's house style and `PULL_REQUEST_TEMPLATE` when one exists; adapt to the team's look rather than imposing one.
 
@@ -72,6 +73,17 @@ was the cheapest large win.
 
 Note what makes it good: the lead carries the whole story, the Why is real and cited, the *Behavior change* section surfaces the one thing a reviewer must not miss, and nothing is decorative.
 
-## 5. Output
+## 5. Verify every claim against the diff
+
+Before finalizing, check that the description asserts only what the diff actually does. Asserting changes or tests that aren't there is the most common *and* most damaging agent-PR failure — it tanks reviewer trust, lowers acceptance, and slows merges. For each sentence, ask "is this in the diff?"
+
+- **Test claims are the worst offender.** Never write "added tests for X" unless a test file is actually in the diff — verify with `git diff <base>...HEAD -- '**/*test*' '**/*spec*'`. If none were added, say so plainly: "No automated tests; verified manually by …". Don't invent a test plan.
+- **No phantom changes.** Drop any feature, refactor, or fix the diff doesn't contain, however plausible it sounds.
+- **No understated scope.** If the diff does *more* than the draft admits — a side effect, a touched public API, a dropped behavior — surface it.
+- **Quantify from the diff, not aspiration.** Cite real counts ("3 endpoints", "12 tests") rather than "comprehensive" or "full coverage".
+
+This is the description-side analogue of "never invent the Why": never carry a claim the code doesn't back.
+
+## 6. Output
 
 Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant. Drop headings that don't apply; match the repo template if present. If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
