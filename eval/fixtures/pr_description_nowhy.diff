@@ -1,0 +1,15 @@
+# FIXTURE: a change whose motivation is NOT discoverable — no ticket, no
+# revealing comment, a generic branch/commit. Pairs with the "thin-Why" eval
+# case: the skill must NOT invent a Why; it should leave a clean author-prompt
+# placeholder instead. Invented code; the point is the absent motivation.
+diff --git a/retry.py b/retry.py
+--- a/retry.py
++++ b/retry.py
+@@ -3,5 +3,5 @@ import time
+-MAX_RETRIES = 3
+-BASE_DELAY = 0.5
++MAX_RETRIES = 5
++BASE_DELAY = 1.0
+ 
+ def with_retry(fn):
+     for attempt in range(MAX_RETRIES):
