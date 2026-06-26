@@ -48,9 +48,19 @@ A comment whose body reads as code rather than prose.
 - Other languages: a conservative heuristic — an assignment (`x = …`, `int n = …`,
   `const x = …`; never `==`/`<=`/etc.) or a bare call statement (`doRefund(c, a);`).
   Less precise than a real parser, but tuned to flag the common commented-out
-  patterns without catching sentences.
-- Never triggered: lines that lead with `TODO`/`FIXME`/`NOTE`/`HACK`/`XXX`/
-  `WARNING` — those are intentional markers, not dead code.
+  patterns without catching sentences. The assignment RHS must carry a code
+  signal (operator, call/index, member access, quote, number) — `default = usd`
+  is prose, not code.
+- Never triggered (precision exemptions, all found by dogfooding):
+  - Lines leading with `TODO`/`FIXME`/`NOTE`/`HACK`/`XXX`/`WARNING` — intentional markers.
+  - Tool directives / pragmas: `shellcheck disable=…`, `noqa`, `type: ignore`,
+    `eslint-disable-*`, `@ts-expect-error`, `pylint:`/`mypy:`/`ruff:` etc.
+  - Prose sentences that merely happen to contain `=` and a parenthetical —
+    natural-language tells (a sentence boundary, a trailing period, a `, not …`
+    clause) gate the heuristic, so `Pass = every run. Smoke test (LLM + network).`
+    stays silent.
+  - Env-var-prefixed usage examples (`MODEL=foo bash run.sh`) — documentation, not
+    dead code. A real `NAME = value` config line with no trailing command still fires.
 
 ## What deslop deliberately does NOT do
 
