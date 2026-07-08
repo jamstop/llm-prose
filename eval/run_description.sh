@@ -144,9 +144,18 @@ $(cat fixtures/pr_description_overclaim.diff)
 Context: none beyond the diff. Verify every claim against the diff before writing.")
   precision
   # The draft claims unit tests + a caching layer; the diff has neither. A correct
-  # rewrite drops both phantom claims (a positive test assertion, or any caching).
-  mustnot '(?:added|adds|introduc[a-z]+|comprehensive)[^.\n]*tests?|unit tests?|test coverage' \
-    "no-phantom-tests — invented test claim dropped"
+  # rewrite drops both phantom claims. Two-step check, because the skill *instructs*
+  # honest negations ("No automated tests; verified manually …") which must not
+  # fail it: drop negated lines first, then any surviving assertive test claim is
+  # phantom. POSIX ERE only: plain groups, and [^.] not [^.\n] — inside a bracket
+  # expression \n is the two literal chars backslash+n, which silently excludes
+  # the letter n and broke matching on e.g. "adds new tests".
+  positive=$(grep -viE '\bno\b[^.]*\btest|without tests?|not (been )?tested' <<<"$OUT")
+  if grep -qiE '(added|adds|introduc[a-z]+|comprehensive|includes?)[^.]*\btests?\b|unit tests|test coverage' <<<"$positive"; then
+    chk 0 "no-phantom-tests — invented test claim survived"
+  else
+    chk 1 "no-phantom-tests — invented test claim dropped"
+  fi
   mustnot 'cach' "no-phantom-cache — invented caching claim dropped"
   must 'empty|at least one item|\bitems\b' "substance — the real change (empty-order check) is kept"
   structure
