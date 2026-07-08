@@ -1,0 +1,13 @@
+# FIXTURE: a small, honest change — one validation tweak. There is NO test file
+# and NO caching here. Pairs with the "claims" eval case + the overclaim draft,
+# which asserts tests and a caching layer that don't exist. A good rewrite must
+# verify claims against the diff and drop the phantom ones. Invented code.
+diff --git a/orders.py b/orders.py
+--- a/orders.py
++++ b/orders.py
+@@ -14,6 +14,8 @@ def submit_order(order):
+     if order.total <= 0:
+         raise ValueError("order total must be positive")
++    if order.items == []:
++        raise ValueError("order must have at least one item")
+     return _persist(order)

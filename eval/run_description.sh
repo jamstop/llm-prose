@@ -125,11 +125,49 @@ Context: consolidating user lookups — the public method is renamed and gains a
   return $sfail
 }
 
+# --- scenario: overclaiming draft (claims must be verified vs the diff) ------
+scn_claims() {
+  echo "  [claims] must drop claims the diff doesn't back"
+  sfail=0
+  OUT=$(agent "Use the pr-description-review skill from the loaded plugin to REWRITE the PR description below to its 'beautiful' bar. $REWRITE_INSTR
+
+Current description:
+---
+$(cat fixtures/pr_description_overclaim_draft.md)
+---
+
+Actual change (unified diff):
+\`\`\`diff
+$(cat fixtures/pr_description_overclaim.diff)
+\`\`\`
+
+Context: none beyond the diff. Verify every claim against the diff before writing.")
+  precision
+  # The draft claims unit tests + a caching layer; the diff has neither. A correct
+  # rewrite drops both phantom claims. Two-step check, because the skill *instructs*
+  # honest negations ("No automated tests; verified manually …") which must not
+  # fail it: drop negated lines first, then any surviving assertive test claim is
+  # phantom. POSIX ERE only: plain groups, and [^.] not [^.\n] — inside a bracket
+  # expression \n is the two literal chars backslash+n, which silently excludes
+  # the letter n and broke matching on e.g. "adds new tests".
+  positive=$(grep -viE '\bno\b[^.]*\btest|without tests?|not (been )?tested' <<<"$OUT")
+  if grep -qiE '(added|adds|introduc[a-z]+|comprehensive|includes?)[^.]*\btests?\b|unit tests|test coverage' <<<"$positive"; then
+    chk 0 "no-phantom-tests — invented test claim survived"
+  else
+    chk 1 "no-phantom-tests — invented test claim dropped"
+  fi
+  mustnot 'cach' "no-phantom-cache — invented caching claim dropped"
+  must 'empty|at least one item|\bitems\b' "substance — the real change (empty-order check) is kept"
+  structure
+  rewrite
+  return $sfail
+}
+
 # --- driver ------------------------------------------------------------------
 total=0 passed=0
 for i in $(seq 1 "$RUNS"); do
   echo "=== run $i/$RUNS ==="
-  for scn in scn_session scn_thinwhy scn_iface; do
+  for scn in scn_session scn_thinwhy scn_iface scn_claims; do
     total=$((total+1))
     if "$scn"; then echo "  -> PASS"; passed=$((passed+1)); else echo "  -> FAIL"; fi
   done
