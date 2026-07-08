@@ -407,14 +407,23 @@ def main(argv=None) -> int:
     enabled = set(args.rules.split(",")) if args.rules else None
     findings: list[Finding] = []
     if args.diff:
+        missing = []
         for path, lines in added_lines(sys.stdin.read()).items():
             if language_for_path(path) is None:
                 continue
             try:
                 file_findings = lint_path(path, enabled)
             except (FileNotFoundError, OSError):
+                missing.append(path)
                 continue
             findings.extend(f for f in file_findings if f.line in lines)
+        if missing:
+            # --diff lints the files on disk (the diff alone lacks full-file
+            # context), so a diff from a branch that isn't checked out would
+            # otherwise "pass" silently. Make the gap loud.
+            print(f"deslop: {len(missing)} file(s) in the diff not found on disk — "
+                  f"findings are incomplete; check out the branch first: "
+                  + ", ".join(missing), file=sys.stderr)
     else:
         for path in args.paths:
             findings.extend(lint_path(path, enabled))

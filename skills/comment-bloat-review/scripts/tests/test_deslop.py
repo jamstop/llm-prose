@@ -266,3 +266,28 @@ class TestCli:
         p.write_text("# total = amount * 100\nx = 1\n")
         # Only R1 enabled -> the commented-out line is not flagged -> clean exit.
         assert deslop.main([str(p), "--rules", "notes-to-self"]) == 0
+
+    def test_diff_warns_when_file_missing_from_disk(self, capsys, monkeypatch):
+        # --diff lints files on disk; a diff from an un-checked-out branch used
+        # to yield a silent "0 findings" indistinguishable from a clean PR.
+        import io
+        diff = ("diff --git a/gone.py b/gone.py\n"
+                "--- a/gone.py\n+++ b/gone.py\n"
+                "@@ -0,0 +1 @@\n+# as requested\n")
+        monkeypatch.setattr(deslop.sys, "stdin", io.StringIO(diff))
+        assert deslop.main(["--diff"]) == 0
+        err = capsys.readouterr().err
+        assert "not found on disk" in err and "gone.py" in err
+
+    def test_diff_no_warning_when_files_present(self, tmp_path, capsys, monkeypatch):
+        import io
+        import os
+        p = tmp_path / "f.py"
+        p.write_text("# as requested\nx = 1\n")
+        rel = os.path.relpath(p)
+        diff = (f"diff --git a/{rel} b/{rel}\n"
+                f"--- a/{rel}\n+++ b/{rel}\n"
+                "@@ -0,0 +1,2 @@\n+# as requested\n+x = 1\n")
+        monkeypatch.setattr(deslop.sys, "stdin", io.StringIO(diff))
+        assert deslop.main(["--diff"]) == 1
+        assert "not found on disk" not in capsys.readouterr().err
