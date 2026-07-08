@@ -65,7 +65,7 @@ Changes land via PRs, and the version bumps itself on merge. Claude Code keys th
 
 Normal flow:
 
-1. Branch, then commit with a [conventional](https://www.conventionalcommits.org/) prefix — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:` (use `feat!:` for breaking).
+1. Branch, then commit with a [conventional](https://www.conventionalcommits.org/) prefix — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `perf:`, `ci:`, `build:`, `style:` (use `feat!:` for breaking). An unrecognized prefix means **no bump and no release** — the merge lands on `main` but never reaches installed users.
 2. Open a PR with a conventional **title** (it's the bump signal). Dogfood it: run `/prose` (or `/prose-code-comments`) on the diff.
 3. On merge to `main`, `.github/workflows/version-bump.yml` reads the title/commits, bumps all three manifests (`major` for `feat!`, `minor` for `feat`, `patch` for the rest), validates they agree, commits `chore: bump … [skip ci]`, and tags `llm-prose--vX.Y.Z`.
 

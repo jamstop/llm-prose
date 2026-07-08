@@ -21,11 +21,10 @@ on:
 permissions:
   contents: write
 
-# Serialize bump jobs: two PRs merged seconds apart used to race — both read the
-# same base version, the second push no-op'd, and one merge shipped un-bumped
-# (observed with #9/#11; needed a manual dispatch to recover). One runner at a
-# time; a superseded pending job is fine, since whichever job runs last bumps
-# above all content merged so far.
+# Serialize bump jobs: two PRs merged seconds apart can race — both read the
+# same base version and the loser's push no-ops, shipping a merge un-bumped.
+# One runner at a time; a superseded pending job is fine, since whichever job
+# runs last bumps above all content merged so far.
 concurrency:
   group: version-bump
   cancel-in-progress: false
@@ -48,6 +47,7 @@ jobs:
               feat\(*\)!:*|feat!:*|*BREAKING\ CHANGE:*) echo major;;
               feat:*|feat\(*\):*)                       echo minor;;
               fix:*|fix\(*\):*|docs:*|docs\(*\):*|chore:*|chore\(*\):*|refactor:*|refactor\(*\):*) echo patch;;
+              test:*|test\(*\):*|perf:*|perf\(*\):*|ci:*|ci\(*\):*|build:*|build\(*\):*|style:*|style\(*\):*) echo patch;;
               *) echo none;;
             esac
           }
