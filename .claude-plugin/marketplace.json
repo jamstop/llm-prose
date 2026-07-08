@@ -11,7 +11,7 @@
       "name": "llm-prose",
       "source": "./",
       "description": "Reviews comments for bloat and rewrites PR descriptions. Skills + slash commands.",
-      "version": "0.5.2"
+      "version": "0.5.3"
     }
   ]
 }
