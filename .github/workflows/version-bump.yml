@@ -21,6 +21,15 @@ on:
 permissions:
   contents: write
 
+# Serialize bump jobs: two PRs merged seconds apart used to race — both read the
+# same base version, the second push no-op'd, and one merge shipped un-bumped
+# (observed with #9/#11; needed a manual dispatch to recover). One runner at a
+# time; a superseded pending job is fine, since whichever job runs last bumps
+# above all content merged so far.
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
 jobs:
   bump:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
@@ -77,4 +86,7 @@ jobs:
           git add .cursor-plugin/plugin.json .claude-plugin/plugin.json .claude-plugin/marketplace.json
           git commit -m "chore: bump version to $NEW [skip ci]"
           git tag "llm-prose--v$NEW"
-          git push origin HEAD:main --tags
+          # Belt-and-suspenders under the concurrency group: if main moved since
+          # checkout, rebase the bump commit rather than failing the push.
+          git push origin HEAD:main --tags \
+            || { git pull --rebase origin main && git push origin HEAD:main --tags; }
