@@ -12,6 +12,7 @@ Judge a PR description against its actual diff, then **compose** one that is gen
 
 - Description + metadata: `gh pr view <n> --json title,body,files` (or `gh pr view` on current branch).
 - Actual changes: `gh pr diff <n>` (or `git diff <base>...HEAD` locally). The description must match the diff — don't trust it blindly.
+- **The repo's PR template** — check `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, and `.github/PULL_REQUEST_TEMPLATE/`. Note its exact headings and furniture: a ticket line (`Resolves: …`), required sections, admonitions (`> [!NOTE]`), placeholder comments. Also skim 2-3 recently merged PRs (`gh pr list --state merged`) to see the house style in practice.
 
 ## 2. Required content
 
@@ -42,11 +43,13 @@ De-slopped is the floor, not the goal. A great description is *crafted* — it r
 - **Backtick every symbol, file, and path** so they pop from prose — `fetch_user`, `auth.py`, `--include-deleted`, not the bare words. A scannable description is half formatting discipline.
 - **Confident, plain voice with real numbers.** Direct and specific. "Cuts the hot path to one lookup per minute" beats "improves performance"; "12 new tests, all passing" beats "full coverage."
 
-**Form serves the reader — it is not slop.** Headings, bullets, a table, even an occasional emoji *if the repo's culture uses them* are good when they aid scanning. The sin is never structure; it's **decoration over empty content** — adjectives with no facts, sections that echo the diff, polish that hides the absence of a Why. Judge by substance-per-line, not by formatting. Mirror the repo's house style and `PULL_REQUEST_TEMPLATE` when one exists; adapt to the team's look rather than imposing one.
+**The repo's template wins — always.** If the repo has a PR template (step 1), compose *inside it*: use its exact headings, keep its ticket line and required sections, preserve its furniture (admonitions, `Human Notes`-style sections, placeholder comments where you have nothing to add). Map the craft elements into its sections — the lead goes at the top of `Summary`, the Why lives in or right after it, behavior/interface callouts go wherever changes are described, verification into its testing section. A description in the wrong shape reads as alien next to every other PR in the repo, no matter how good the content — do **not** impose the exemplar's headings on a repo that has its own. The exemplar below is for repos with *no* template.
+
+**Form serves the reader — it is not slop.** Headings, bullets, a table, even an occasional emoji *if the repo's culture uses them* are good when they aid scanning. The sin is never structure; it's **decoration over empty content** — adjectives with no facts, sections that echo the diff, polish that hides the absence of a Why. Judge by substance-per-line, not by formatting. Prefer real headings (`###`) over bold-line pseudo-headings — bold lines render flat and cramped on GitHub.
 
 **When the Why is genuinely missing**, don't fabricate it and don't dump a bare `TODO`. Mine the branch name and commits first (`git log <base>..HEAD`). If it's still unknown, write a clean, specific prompt to the author — e.g. `**Why:** _(author: what regression/ticket/decision drove this? the diff doesn't say.)_` — so the gap is obvious and easy to fill.
 
-### Exemplar (structured, substantive, zero fluff)
+### Exemplar — only for repos with **no** PR template
 
 ```markdown
 ## Cache permission lookups on the auth hot path
@@ -58,20 +61,20 @@ the DB at most once a minute instead of once a request.
 **Why:** PERF-812 — permission checks were the top span in the auth trace; this
 was the cheapest large win.
 
-**How**
+### How
 - `PermissionCache` (TTLCache, 60s) wraps `PermissionStore.check`.
 - Invalidated on role change via the existing `role.updated` event — no stale grants.
 
-**Behavior change**
+### Behavior change
 - No API change. Permission edits now take up to 60s to propagate (was instant).
   Acceptable per PERF-812; called out for security review.
 
-**Verify**
+### Verify
 - Load test `/api/*`: p50 40ms → 6ms.
 - Change a role, confirm access updates within 60s.
 ```
 
-Note what makes it good: the lead carries the whole story, the Why is real and cited, the *Behavior change* section surfaces the one thing a reviewer must not miss, and nothing is decorative.
+Note what makes it good: the lead carries the whole story, the Why is real and cited, the *Behavior change* section surfaces the one thing a reviewer must not miss, and nothing is decorative. In a repo *with* a template, the same content flows into the template's own sections instead — the craft transfers, the headings don't.
 
 ## 5. Verify every claim against the diff
 
@@ -86,4 +89,4 @@ This is the description-side analogue of "never invent the Why": never carry a c
 
 ## 6. Output
 
-Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant. Drop headings that don't apply; match the repo template if present. If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
+Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant, **in the repo template's shape when one exists**. Drop headings that don't apply (in a template, leave its required sections in place with their placeholder comments instead). If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
