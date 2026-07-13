@@ -103,6 +103,7 @@ The description pass has its own behavioral eval (`eval/run_description.sh`) —
 - **thin-why** — the motivation is genuinely undiscoverable: the rewrite must **not fabricate** a Why, leaving an explicit author-prompt placeholder instead.
 - **iface** — a refactor with a real signature change: the rewrite must surface the interface change for consumers, not bury it.
 - **claims** — an overclaiming draft (asserts unit tests + a caching layer the diff doesn't contain): the rewrite must verify claims against the diff and **drop the phantom ones**, keeping only what the code backs.
+- **template** — the repo has a PR template: the rewrite must compose **inside its headings and furniture** (ticket line, required sections), not impose the skill's own exemplar shape. Found by dogfooding on a real repo where skill-written descriptions looked alien next to template-following ones.
 
 Scoring is on qualities, not exact strings: **precision** (no AI filler survives), **substance** (real Why present, or correctly deferred), **behavior/interface** (the consumer-facing change is surfaced), **claims-verified** (no invented tests/features survive), and **structure** (a lead + scannable sections).
 

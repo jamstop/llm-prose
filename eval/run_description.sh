@@ -163,11 +163,46 @@ Context: none beyond the diff. Verify every claim against the diff before writin
   return $sfail
 }
 
+# --- scenario: repo with a PR template (template shape must win) -------------
+scn_template() {
+  echo "  [template] repo template headings must win over the exemplar"
+  sfail=0
+  OUT=$(agent "Use the pr-description-review skill from the loaded plugin to REWRITE the PR description below to its 'beautiful' bar. $REWRITE_INSTR
+
+This repo has a PR template (.github/pull_request_template.md):
+---
+$(cat fixtures/pr_description_template.md)
+---
+
+Current description:
+---
+$(cat fixtures/pr_description_stately.md)
+---
+
+Actual change (unified diff):
+\`\`\`diff
+$(cat fixtures/pr_description_change.diff)
+\`\`\`
+
+Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task because the idle timer was never reset on authenticated requests; this makes session expiry idle-based instead of absolute.")
+  precision
+  # Composed inside the template: its headings + ticket line present...
+  has '### Summary' && has '### Changes' && has '### Testing' && has 'Resolves:' \
+    && chk 1 "template — repo headings + ticket line used" \
+    || chk 0 "template — repo shape missing"
+  # ...and the exemplar's no-template shape did NOT leak in.
+  mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved)' \
+    "no-leak — exemplar headings kept out of a templated repo"
+  has 'SUPPORT-1421' && chk 1 "substance — real Why carried over" || chk 0 "substance — Why lost"
+  rewrite
+  return $sfail
+}
+
 # --- driver ------------------------------------------------------------------
 total=0 passed=0
 for i in $(seq 1 "$RUNS"); do
   echo "=== run $i/$RUNS ==="
-  for scn in scn_session scn_thinwhy scn_iface scn_claims; do
+  for scn in scn_session scn_thinwhy scn_iface scn_claims scn_template; do
     total=$((total+1))
     if "$scn"; then echo "  -> PASS"; passed=$((passed+1)); else echo "  -> FAIL"; fi
   done
