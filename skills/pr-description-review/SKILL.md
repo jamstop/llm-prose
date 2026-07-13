@@ -19,7 +19,7 @@ Judge a PR description against its actual diff, then **compose** one that is gen
 A good description answers, in order:
 
 - **What** — what changed, in one or two plain sentences. Not a file list; the diff already lists files.
-- **Why** — the motivation: problem, ticket/bug, user impact, or decision being implemented. This is the part LLMs most often omit. **Never invent it.** If the motivation isn't in the diff, a linked ticket, or the branch/commit context, ask the user or leave a `<!-- why: TODO -->` placeholder rather than fabricate one.
+- **Why** — the motivation: problem, ticket/bug, user impact, or decision being implemented. This is the part LLMs most often omit. **Never invent it.** If the motivation isn't in the diff, a linked ticket, or the branch/commit context, ask the user — or leave the author-prompt placeholder described in section 4.
 - **How** — the approach and any non-obvious design choices or trade-offs. Skip step-by-step narration of the diff.
 - **Interface changes** — surface anything a consumer must notice: new/changed/removed public APIs, function signatures, props, endpoints, schema/migrations, config or env vars, breaking changes, feature flags. Call out breaking changes explicitly.
 
@@ -36,16 +36,14 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 
 ## 4. What a beautiful description looks like
 
-De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Aim for these, in priority order:
+De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Form serves the reader and is never the sin; **decoration over empty content** is (adjectives without facts, sections that echo the diff, polish hiding a missing Why). Judge by substance-per-line. Aim for, in priority order:
 
 - **A strong lead.** One or two sentences that state what changed *and* why it matters, before any heading. The reviewer should understand the gist from the first line.
-- **Scannable structure.** Short sections and tight bullets beat a wall of prose. For a refactor or behavior-sensitive change, a **"Preserved / behavior change"** callout is gold — it answers the reviewer's first fear. For interface changes, a small table (symbol → change) reads faster than prose. Pull a notable bug-fix into its own line rather than burying it in a file list — it signals the PR handles edge cases.
-- **Backtick every symbol, file, and path** so they pop from prose — `fetch_user`, `auth.py`, `--include-deleted`, not the bare words. A scannable description is half formatting discipline.
-- **Confident, plain voice with real numbers.** Direct and specific. "Cuts the hot path to one lookup per minute" beats "improves performance"; "12 new tests, all passing" beats "full coverage."
+- **Scannable structure.** Short sections and tight bullets beat a wall of prose; prefer real headings (`###`) over bold-line pseudo-headings, which render flat on GitHub. For a behavior-sensitive change, a **"Preserved / behavior change"** callout answers the reviewer's first fear; for interface changes, a small table (symbol → change) reads faster than prose; pull a notable bug-fix onto its own line.
+- **Backtick every symbol, file, and path** — `fetch_user`, `auth.py`, `--include-deleted` — so they pop from prose.
+- **Confident, plain voice with real numbers.** "Cuts the hot path to one lookup per minute" beats "improves performance"; "12 new tests, all passing" beats "full coverage". An occasional emoji is fine *if the repo's culture uses them*.
 
-**The repo's template wins — always.** If the repo has a PR template (step 1), compose *inside it*: use its exact headings, keep its ticket line and required sections, preserve its furniture (admonitions, `Human Notes`-style sections, placeholder comments where you have nothing to add). Map the craft elements into its sections — the lead goes at the top of `Summary`, the Why lives in or right after it, behavior/interface callouts go wherever changes are described, verification into its testing section. A description in the wrong shape reads as alien next to every other PR in the repo, no matter how good the content — do **not** impose the exemplar's headings on a repo that has its own. The exemplar below is for repos with *no* template.
-
-**Form serves the reader — it is not slop.** Headings, bullets, a table, even an occasional emoji *if the repo's culture uses them* are good when they aid scanning. The sin is never structure; it's **decoration over empty content** — adjectives with no facts, sections that echo the diff, polish that hides the absence of a Why. Judge by substance-per-line, not by formatting. Prefer real headings (`###`) over bold-line pseudo-headings — bold lines render flat and cramped on GitHub.
+**The repo's template wins — always.** If the repo has a PR template (step 1), compose *inside it*: its exact headings, ticket line, and furniture (admonitions, `Human Notes`-style sections, placeholder comments where you have nothing to add). Map the craft into its sections — lead at the top of `Summary`, Why in or right after it, behavior/interface callouts where changes are described, verification in its testing section. A description in the wrong shape reads as alien next to every other PR in the repo, no matter how good the content. The exemplar below is **only** for repos with no template.
 
 **When the Why is genuinely missing**, don't fabricate it and don't dump a bare `TODO`. Mine the branch name and commits first (`git log <base>..HEAD`). If it's still unknown, write a clean, specific prompt to the author — e.g. `**Why:** _(author: what regression/ticket/decision drove this? the diff doesn't say.)_` — so the gap is obvious and easy to fill.
 
