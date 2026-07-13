@@ -194,7 +194,7 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
   # headings nor standalone bold-line pseudo-headings (a bold *label* inside a
   # template section, like `**Behavior change:** text`, is fine — only a bare
   # bold line acting as a heading counts).
-  mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved|Behavior change)\*\*\s*$' \
+  mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved|Behavior change):?\*\*[[:space:]]*$' \
     "no-leak — exemplar headings kept out of a templated repo"
   has 'SUPPORT-1421' && chk 1 "substance — real Why carried over" || chk 0 "substance — Why lost"
   rewrite
