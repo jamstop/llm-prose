@@ -190,8 +190,11 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
   has '### Summary' && has '### Changes' && has '### Testing' && has 'Resolves:' \
     && chk 1 "template — repo headings + ticket line used" \
     || chk 0 "template — repo shape missing"
-  # ...and the exemplar's no-template shape did NOT leak in.
-  mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved)' \
+  # ...and the exemplar's no-template shape did NOT leak in: neither its `###`
+  # headings nor standalone bold-line pseudo-headings (a bold *label* inside a
+  # template section, like `**Behavior change:** text`, is fine — only a bare
+  # bold line acting as a heading counts).
+  mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved|Behavior change)\*\*\s*$' \
     "no-leak — exemplar headings kept out of a templated repo"
   has 'SUPPORT-1421' && chk 1 "substance — real Why carried over" || chk 0 "substance — Why lost"
   rewrite
