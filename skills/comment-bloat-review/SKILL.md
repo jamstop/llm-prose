@@ -62,7 +62,7 @@ The bar is **annotation, not documentation**: a comment's job is to mark the one
 
 Group by file. For each flagged comment give: location, category, and a concrete fix (delete, or tightened rewrite). Lead with a one-line verdict (e.g. "4 to delete, 2 to tighten, rest fine"). When asked, apply the edits directly. Keep the report tight.
 
-## Final checks — verify each before reporting
+## 5. Final checks — verify each before reporting
 
 1. `deslop` ran (or you noted why it couldn't); its hits are in the report.
 2. **Every kept comment is 1-2 lines and annotates the code directly under it.** For each one over two lines, you drafted the one-line version and argued each clause back in.
