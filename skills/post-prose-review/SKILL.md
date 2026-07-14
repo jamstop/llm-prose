@@ -15,6 +15,8 @@ Produce the findings exactly as the rubric skills define them:
 - Comments: follow `comment-bloat-review` on the PR diff (`gh pr diff <n>`). Keep each fix line-anchored: file, line range, and the replacement text (empty = delete).
 - Description: follow `pr-description-review` for the verdict and rewrite.
 
+**Then filter by confidence.** Posting to a PR is louder than reporting to the user, so the bar is higher: an inline suggestion or stacked-PR edit must be a finding you'd defend to the author in person — deslop hits and clear rubric cases qualify. Anything borderline (a tighten you're only mostly sure about, a judgment call the author might reasonably reject) goes as a short take-or-leave note in the sticky comment, or nowhere. This is how the established review bots keep their welcome: post few, high-confidence findings rather than everything you noticed.
+
 If there are no findings, say so to the user and post nothing.
 
 ## 2. Choose the delivery
