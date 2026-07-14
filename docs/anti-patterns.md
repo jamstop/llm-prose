@@ -120,9 +120,24 @@ The problem is real enough that CI actions now scan for it — e.g.
 
 ---
 
+## The broader taxonomy
+
+The largest maintained catalog of AI-writing tells is Wikipedia's
+[**Signs of AI writing**](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing),
+curated by WikiProject AI Cleanup from thousands of cleaned-up articles: puffery and
+inflated significance, formulaic "rule of three" constructions, em-dash overuse,
+hedging stacks, section summaries that restate the section, and dozens more. It targets
+encyclopedic prose, but the tells transfer directly to PR descriptions and long
+comments — several community slop-cleanup skills are built entirely on it. When a
+description "reads AI" in a way this gallery doesn't name, that page probably names it.
+
+---
+
 ## Fixtures built from these
 
-- `eval/fixtures/sample.py` — comment slop (narration, residue, doc dumps) with sentinel
-  tokens, scored by `eval/run.sh`.
-- `eval/fixtures/pr_description_stately.md` / `pr_description_good.md` — a "stately" slop
-  description and its tightened counterpart, for dogfooding the description pass.
+- `eval/fixtures/sample.py` — comment slop (narration, residue, doc dumps, a dense
+  design-doc comment) with sentinel tokens, scored by `eval/run.sh`.
+- `eval/fixtures/pr_description_*.md` / `*.diff` — a "stately" slop description, its
+  crafted counterpart, and the drafts/diffs behind the six description-eval scenarios
+  (thin-why, interface, overclaiming, template, overlong), scored by
+  `eval/run_description.sh`.
