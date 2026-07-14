@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Judge a PR description against its actual diff, then **compose** one that is genuinely good to read — not just stripped of slop. Two distinct jobs: a short *verdict* (what's weak) and a *crafted rewrite* (what a reviewer would be glad to open). Spend real effort on the rewrite; that's the deliverable.
 
+Two hard constraints up front, because they're the ones most often broken: **a reviewer must absorb the description in about a minute** — a bullet is one line, and accuracy does not excuse length; and **if you wrote the draft in this session, a fresh subagent judges it, not you** (section 7).
+
 ## 1. Gather
 
 - Description + metadata: `gh pr view <n> --json title,body,files` (or `gh pr view` on current branch).
@@ -36,7 +38,11 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 
 ## 4. What a beautiful description looks like
 
-De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Form serves the reader and is never the sin; **decoration over empty content** is (adjectives without facts, sections that echo the diff, polish hiding a missing Why). Judge by substance-per-line. Aim for, in priority order:
+De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Form serves the reader and is never the sin; **decoration over empty content** is (adjectives without facts, sections that echo the diff, polish hiding a missing Why). Judge by substance-per-line — and by the reader's clock:
+
+**The one-minute budget.** A description a reviewer can't absorb in about a minute is failing *whatever its accuracy* — dense, true, em-dash-chained prose is the same disease as design-doc comments, and "every clause is informative" is how it defends itself. Concretely: a **bullet is one line** (a second line means it's two bullets or too much detail); the whole body stays around **200-300 words** for a typical PR; design rationale beyond that lives in the code review conversation, a doc, or the commit messages — link, don't inline. When drafting a bullet, write the long version if you must, then keep only the clause a reviewer needs to *route their attention* — they read the description to decide where to look, not to skip reading the diff.
+
+Aim for, in priority order:
 
 - **A strong lead.** One or two sentences that state what changed *and* why it matters, before any heading. The reviewer should understand the gist from the first line.
 - **Scannable structure.** Short sections and tight bullets beat a wall of prose; prefer real headings (`###`) over bold-line pseudo-headings, which render flat on GitHub. For a behavior-sensitive change, a **"Preserved / behavior change"** callout answers the reviewer's first fear; for interface changes, a small table (symbol → change) reads faster than prose; pull a notable bug-fix onto its own line.
@@ -44,6 +50,8 @@ De-slopped is the floor, not the goal. A great description is *crafted* — it r
 - **Confident, plain voice with real numbers.** "Cuts the hot path to one lookup per minute" beats "improves performance"; "12 new tests, all passing" beats "full coverage". An occasional emoji is fine *if the repo's culture uses them*.
 
 **The repo's template wins — always.** If the repo has a PR template (step 1), compose *inside it*: its exact headings, ticket line, and furniture (admonitions, `Human Notes`-style sections, placeholder comments where you have nothing to add). Map the craft into its sections — lead at the top of `Summary`, Why in or right after it, behavior/interface callouts where changes are described, verification in its testing section. A description in the wrong shape reads as alien next to every other PR in the repo, no matter how good the content. The exemplar below is **only** for repos with no template.
+
+Template conformance is checkable — verify all four: (1) the ticket/`Resolves:` line survives, filled or with its placeholder; (2) every required template heading is present, **with its exact name** — don't rename `### Changes` to "What's in it"; (3) **no invented sections** — extra material folds into the nearest template section (a "known trade-off" is a line in `Summary` or `Changes`, not a new heading); (4) template furniture (comments, admonitions) is preserved where you have nothing to add.
 
 **When the Why is genuinely missing**, don't fabricate it and don't dump a bare `TODO`. Mine the branch name and commits first (`git log <base>..HEAD`). If it's still unknown, write a clean, specific prompt to the author — e.g. `**Why:** _(author: what regression/ticket/decision drove this? the diff doesn't say.)_` — so the gap is obvious and easy to fill.
 
@@ -88,3 +96,12 @@ This is the description-side analogue of "never invent the Why": never carry a c
 ## 6. Output
 
 Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant, **in the repo template's shape when one exists**. Drop headings that don't apply (in a template, leave its required sections in place with their placeholder comments instead). If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
+
+## 7. Final checks — verify each before delivering
+
+1. **Length:** readable in about a minute; every bullet is one line; ~200-300 words for a typical PR. If over, cut detail, not sections.
+2. **Template:** ticket line present; every required heading present with its exact name; no invented sections; furniture preserved.
+3. **Why:** real and cited, or an explicit author-prompt — never invented.
+4. **Claims:** every sentence is backed by the diff (section 5); test claims verified against actual test files.
+5. **Interface/behavior:** anything a consumer must notice is surfaced, not buried.
+6. **Authorship:** if you wrote this draft (or the PR) in the current session, delegate the judgment — launch a fresh subagent with only this skill and the diff, no conversation history, and apply its verdict. Your context contains the rationale that justified every excess word; a clean reader is the only honest judge.
