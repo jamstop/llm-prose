@@ -19,15 +19,18 @@
 #
 # Pass = every scenario passes every run. Smoke test (LLM + network), not a CI gate.
 #
-# Usage:  bash eval/run_description.sh            # default model, 1 run each
+# Usage:  bash eval/run_description.sh            # pinned default model, 1 run each
 #         RUNS=3 bash eval/run_description.sh     # repeat to gauge flakiness
-#         MODEL=sonnet-4-thinking bash eval/run_description.sh
+#         MODEL=claude-sonnet-5-thinking-high bash eval/run_description.sh
 set -uo pipefail
 cd "$(dirname "$0")" || exit 2
 
 PLUGIN="${PLUGIN_DIR:-$(cd .. && pwd)}"
 RUNS="${RUNS:-1}"
-MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
+# Pinned so a shifting CLI default can't silently move the eval baseline;
+# override with MODEL=… (MODEL=auto for the CLI default).
+MODEL="${MODEL:-claude-sonnet-5-thinking-high}"
+MODEL_ARG=(--model "$MODEL"); [ "$MODEL" = auto ] && MODEL_ARG=()
 command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; exit 2; }
 
 # Banned AI-filler — content-free phrases. NOT emoji or formatting: per the skill,

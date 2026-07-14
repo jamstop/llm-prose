@@ -11,8 +11,8 @@
 # Pass = every B*/T* flagged (recall), each T* flagged as "tighten" (action), and
 # no K* flagged (precision).
 #
-# Usage:  bash eval/run.sh            # default model
-#         MODEL=sonnet-4-thinking bash eval/run.sh
+# Usage:  bash eval/run.sh            # pinned default model (see MODEL below)
+#         MODEL=claude-sonnet-5-thinking-high bash eval/run.sh
 #         RUNS=3 bash eval/run.sh     # repeat to gauge flakiness
 set -uo pipefail
 cd "$(dirname "$0")" || exit 2
@@ -23,7 +23,10 @@ DELETE=(CMT_B1 CMT_B2 CMT_B3 CMT_B4 CMT_B5 CMT_B6 CMT_B7 CMT_B8)
 TIGHTEN=(CMT_T1 CMT_T2)
 KEEP=(CMT_K1 CMT_K2 CMT_K3 CMT_K4)
 RUNS="${RUNS:-1}"
-MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
+# Pinned so a shifting CLI default can't silently move the eval baseline;
+# override with MODEL=… (MODEL=auto for the CLI default).
+MODEL="${MODEL:-claude-sonnet-5-thinking-high}"
+MODEL_ARG=(--model "$MODEL"); [ "$MODEL" = auto ] && MODEL_ARG=()
 
 command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; exit 2; }
 

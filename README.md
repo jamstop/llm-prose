@@ -80,7 +80,7 @@ Out-of-band releases (no PR): run the **auto version bump** workflow manually (A
 - `eval/run_description.sh` drives `pr-description-review` to rewrite weak drafts against real diffs across six scenarios — **session** (use the available Why, surface the behavior change), **thin-why** (never fabricate a missing Why), **iface** (surface a signature change), **claims** (drop claims the diff doesn't back), **template** (compose inside the repo's PR template, no invented headings), **compress** (an accurate-but-overlong draft must shrink to the one-minute budget without losing substance). Scoring is on qualities, not exact strings.
 
 ```bash
-bash eval/run.sh && bash eval/run_description.sh   # RUNS=n to repeat, MODEL=… to pin
+bash eval/run.sh && bash eval/run_description.sh   # RUNS=n to repeat, MODEL=… to override the pin
 ```
 
 Add fixtures as you find patterns the skills mishandle.
