@@ -61,3 +61,10 @@ The bar is **annotation, not documentation**: a comment's job is to mark the one
 ## 4. Output
 
 Group by file. For each flagged comment give: location, category, and a concrete fix (delete, or tightened rewrite). Lead with a one-line verdict (e.g. "4 to delete, 2 to tighten, rest fine"). When asked, apply the edits directly. Keep the report tight.
+
+## Final checks — verify each before reporting
+
+1. `deslop` ran (or you noted why it couldn't); its hits are in the report.
+2. **Every kept comment is 1-2 lines and annotates the code directly under it.** For each one over two lines, you drafted the one-line version and argued each clause back in.
+3. No kept comment narrates the code, restates a signature, or tells a story that belongs in the PR/docs — *true and informative* did not excuse *oversized*.
+4. If you wrote these comments in this session, a fresh subagent made the calls — not you.
