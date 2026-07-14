@@ -56,6 +56,8 @@ The bar is **annotation, not documentation**: a comment's job is to mark the one
 
 **Review as a skeptical stranger, especially for comments you wrote.** If you authored the diff, the pass tends to confirm your own taste — the density that felt justified while writing still feels justified while reviewing. Counter it mechanically: for every comment over two lines, draft the one-line version first, then argue for each clause you'd restore. Most don't come back.
 
+**If you wrote these comments in the current session, don't self-review — delegate.** Your context is where the bias lives: the rationale that justified each comment is still in it. Launch a fresh subagent (the Task/agent tool in Cursor and Claude Code) whose prompt contains only this skill's path (to read and follow) and the diff — no conversation history — and have it return the flag list; then apply its calls, arguing only against clear mistakes. If subagents aren't available, fall back to the draft-the-one-line-version protocol above on every multi-line comment, no exceptions.
+
 ## 4. Output
 
 Group by file. For each flagged comment give: location, category, and a concrete fix (delete, or tightened rewrite). Lead with a one-line verdict (e.g. "4 to delete, 2 to tighten, rest fine"). When asked, apply the edits directly. Keep the report tight.
