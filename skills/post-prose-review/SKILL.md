@@ -21,15 +21,17 @@ If there are no findings, say so to the user and post nothing.
 
 Get the head branch and whether it's a fork: `gh pr view <n> --json headRefName,headRepositoryOwner,isCrossRepository,number,url`.
 
-- **A few comment fixes (≤ 3) → one batched review of inline suggestions.** Native, zero-setup, one-click per fix. Post a single review (not individual comments) via:
+- **A few comment fixes (≤ 3) → one batched review of inline suggestions.** Native, zero-setup, one-click per fix. Post a single review (not individual comments). Everything goes in one JSON document — `gh api` **silently ignores `-f` flags when `--input` is used**, so `event` must be inside the JSON or the review is created PENDING (invisible to the owner, and it blocks your later reviews):
 
   ```
-  gh api repos/{owner}/{repo}/pulls/<n>/reviews -f event=COMMENT \
-    -f body="prose review — apply any of these with 'Commit suggestion'" \
-    --input - <<< '{"comments":[{"path":"...","line":N,"side":"RIGHT","body":"```suggestion\n<replacement>\n```"}]}'
+  jq -n '{event: "COMMENT",
+          body: "prose review — apply any of these with \"Commit suggestion\"",
+          comments: [{path: "src/x.py", line: 12, side: "RIGHT",
+                      body: "```suggestion\n<replacement>\n```"}]}' \
+    | gh api repos/{owner}/{repo}/pulls/<n>/reviews --input -
   ```
 
-  A deletion is an empty suggestion block. A multi-line fix uses `start_line` + `line`. Suggestions can only attach to lines present in the diff — which prose findings always are, since the review scopes to added lines.
+  Confirm the response says `"state": "COMMENTED"` — a `"state": "PENDING"` means the review is unsubmitted; submit or delete it (`gh api --method DELETE .../reviews/<id>`). A deletion is an empty suggestion block. A multi-line fix uses `start_line` + `line`. Suggestions can only attach to lines present in the diff — which prose findings always are, since the review scopes to added lines.
 
 - **More than that → a stacked fix PR.** Apply every fix on a branch and let GitHub's diff viewer be the review:
 
