@@ -13,3 +13,4 @@ When writing or editing code, keep comments lean:
 - No commented-out code. No giant header blocks where one inline note would do.
 - Keep doc comments on public/exported APIs where the project requires them — trim everywhere else.
 - A comment earns its place only if it adds what the code can't: intent, trade-offs, constraints, gotchas, links to context.
+- **One line, two at most.** A comment annotates the code directly under it; it is not a design doc. If it needs a second sentence of rationale, an em-dash chain, or a cross-reference to tell a story, put that in the PR description or docs and leave the one-line version in the code. Correct-and-informative is not a defense for oversized.

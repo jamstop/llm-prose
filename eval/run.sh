@@ -4,7 +4,8 @@
 #
 # Each comment in the fixture carries a sentinel token:
 #   CMT_B* = bloat to DELETE (narration, notes-to-self, dead code, trivial doc)
-#   CMT_T* = warranted public-API doc to TIGHTEN, not delete (over-documented)
+#   CMT_T* = kernel worth keeping, oversized as written -> TIGHTEN, not delete
+#            (over-documented public API, or a dense design-doc comment)
 #   CMT_K* = comments that earn their place and should be KEPT
 #
 # Pass = every B*/T* flagged (recall), each T* flagged as "tighten" (action), and
@@ -19,7 +20,7 @@ cd "$(dirname "$0")" || exit 2
 PLUGIN="${PLUGIN_DIR:-$(cd .. && pwd)}"
 SAMPLE="$(cat fixtures/sample.py)"
 DELETE=(CMT_B1 CMT_B2 CMT_B3 CMT_B4 CMT_B5 CMT_B6 CMT_B7 CMT_B8)
-TIGHTEN=(CMT_T1)
+TIGHTEN=(CMT_T1 CMT_T2)
 KEEP=(CMT_K1 CMT_K2 CMT_K3 CMT_K4)
 RUNS="${RUNS:-1}"
 MODEL_ARG=(); [ -n "${MODEL:-}" ] && MODEL_ARG=(--model "$MODEL")
@@ -29,7 +30,7 @@ command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; e
 PROMPT="Use the comment-bloat-review skill from the loaded plugin to review ONLY the comments in this file.
 Each comment contains a token like CMT_XX. For every comment you would flag, print exactly one line:
 FLAG: <token> <delete|tighten>
-Use 'tighten' when the comment is a warranted public-API doc that is merely over-documented (keep a one-line summary, cut the rest); use 'delete' when the whole comment should go. Do NOT flag comments that earn their place. Print only FLAG: lines, nothing else.
+Use 'tighten' when the comment has a kernel worth keeping but is oversized as written -- an over-documented public-API doc, or a dense multi-line comment whose rationale outgrows the code under it (keep 1-2 direct lines, cut the rest); use 'delete' when the whole comment should go. Do NOT flag comments that earn their place. Print only FLAG: lines, nothing else.
 
 \`\`\`python
 $SAMPLE
