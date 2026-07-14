@@ -200,9 +200,11 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
   # bold line acting as a heading counts).
   mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved|Behavior change):?\*\*[[:space:]]*$' \
     "no-leak — exemplar headings kept out of a templated repo"
-  # ...and no headings the template doesn't define were invented (field failure:
-  # "What's in it" / "Known trade-off" sections alongside half the template).
-  invented=$(grep -E '^#+ ' <<<"$OUT" | grep -viE '^#+ (Summary|Changes|Testing|Screenshots & Videos|Human Notes)[[:space:]]*$')
+  # ...and no section headings the template doesn't define were invented (field
+  # failure: "What's in it" / "Known trade-off" sections alongside half the
+  # template). Checked at ### level — the template's sections are ###, and an
+  # H2 title line is not a section invention.
+  invented=$(grep -E '^###+ ' <<<"$OUT" | grep -viE '^#+ (Summary|Changes|Testing|Screenshots & Videos|Human Notes)[[:space:]]*$')
   [ -z "$invented" ] && chk 1 "no-invention — only template headings used" \
     || chk 0 "no-invention — invented heading(s): $(tr '\n' ';' <<<"$invented")"
   has 'SUPPORT-1421' && chk 1 "substance — real Why carried over" || chk 0 "substance — Why lost"
