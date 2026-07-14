@@ -35,7 +35,12 @@ command -v cursor-agent >/dev/null || { echo "cursor-agent not found on PATH"; e
 
 # Banned AI-filler — content-free phrases. NOT emoji or formatting: per the skill,
 # form serves the reader and isn't slop, so we only flag empty phrasing here.
+# The second group is Google-style-guide trivializers/politeness — words the
+# skill's voice bullet bans ("simply run X", "please note") because they add
+# nothing and condescend when the step isn't simple. Bare "just" is too common
+# an English word to ban safely, so only its trivializer collocations.
 BANNED='several improvements|various other|more seamless|robustness and maintainability|ensure a more'
+BANNED="$BANNED|\bsimply\b|\beasily\b|please note|note that this pr|\bjust (run|add|call|click)\b"
 
 OUT=""        # current rewrite under test (set per scenario)
 sfail=0       # per-scenario failure flag
