@@ -3,15 +3,19 @@
 # through the Cursor CLI to rewrite weak PR descriptions, then scores the output.
 #
 # A description rewrite is generative, so we score qualities, not exact strings.
-# Three scenarios exercise different parts of the rubric:
+# Six scenarios exercise different parts of the rubric:
 #
 #   session   full-context craft: a real Why is available; rewrite must use it,
-#             surface the behavior change, and read well (precision/substance/
-#             behavior/structure).
+#             surface the behavior change, and read well.
 #   thin-why  the motivation is NOT discoverable; rewrite must NOT fabricate a
 #             Why — it must leave an explicit author-prompt placeholder.
 #   iface     a refactor with a real signature change; rewrite must surface the
 #             interface change for consumers, not bury it.
+#   claims    an overclaiming draft; phantom claims must be dropped.
+#   template  the repo has a PR template; its shape must win over the exemplar,
+#             with no invented headings.
+#   compress  an accurate-but-overlong draft; the rewrite must come back inside
+#             the one-minute budget without losing the substance.
 #
 # Pass = every scenario passes every run. Smoke test (LLM + network), not a CI gate.
 #
@@ -196,7 +200,48 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
   # bold line acting as a heading counts).
   mustnot '^#+ (How|Verify|Behavior change)\b|^\*\*(How|Verify|Preserved|Behavior change):?\*\*[[:space:]]*$' \
     "no-leak — exemplar headings kept out of a templated repo"
+  # ...and no headings the template doesn't define were invented (field failure:
+  # "What's in it" / "Known trade-off" sections alongside half the template).
+  invented=$(grep -E '^#+ ' <<<"$OUT" | grep -viE '^#+ (Summary|Changes|Testing|Screenshots & Videos|Human Notes)[[:space:]]*$')
+  [ -z "$invented" ] && chk 1 "no-invention — only template headings used" \
+    || chk 0 "no-invention — invented heading(s): $(tr '\n' ';' <<<"$invented")"
   has 'SUPPORT-1421' && chk 1 "substance — real Why carried over" || chk 0 "substance — Why lost"
+  rewrite
+  return $sfail
+}
+
+# --- scenario: accurate-but-overlong draft (must compress) --------------------
+scn_compress() {
+  echo "  [compress] accurate-but-overlong draft must shrink to the one-minute budget"
+  sfail=0
+  OUT=$(agent "Use the pr-description-review skill from the loaded plugin to REWRITE the PR description below to its bar. $REWRITE_INSTR
+
+Current description:
+---
+$(sed '/^<!--/,/-->$/d' fixtures/pr_description_overlong_draft.md)
+---
+
+Actual change (unified diff):
+\`\`\`diff
+$(cat fixtures/pr_description_change.diff)
+\`\`\`
+
+Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task; every claim in the draft is accurate, nothing is missing. The draft's only defect is its own length.")
+  precision
+  # The core assertion: substantially shorter. Draft body is ~380 words; the
+  # budget in the skill is ~200-300 for a typical PR, and this change is small.
+  draft_words=$(sed '/^<!--/,/-->$/d' fixtures/pr_description_overlong_draft.md | wc -w)
+  out_words=$(wc -w <<<"$OUT")
+  [ "$out_words" -le $((draft_words * 60 / 100)) ] \
+    && chk 1 "budget — $out_words words (draft $draft_words, limit 60%)" \
+    || chk 0 "budget — $out_words words vs draft $draft_words (limit 60%)"
+  # Bullets are one line: no '- ' line runs past ~200 chars (a wrapped-prose bullet).
+  longest=$(grep -E '^[[:space:]]*- ' <<<"$OUT" | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }')
+  [ "$longest" -le 200 ] && chk 1 "bullets — longest ${longest} chars" \
+    || chk 0 "bullets — a ${longest}-char bullet survived"
+  # Substance survives the cut: the Why, the mechanism, and the behavior callout.
+  has 'SUPPORT-1421' && has 'idle|last_seen|inactiv' && chk 1 "substance — Why + mechanism kept" || chk 0 "substance — lost in compression"
+  must 'no schema|no migration|still expire|behavior' "behavior — preserved/changed callout kept"
   rewrite
   return $sfail
 }
@@ -205,7 +250,7 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
 total=0 passed=0
 for i in $(seq 1 "$RUNS"); do
   echo "=== run $i/$RUNS ==="
-  for scn in scn_session scn_thinwhy scn_iface scn_claims scn_template; do
+  for scn in scn_session scn_thinwhy scn_iface scn_claims scn_template scn_compress; do
     total=$((total+1))
     if "$scn"; then echo "  -> PASS"; passed=$((passed+1)); else echo "  -> FAIL"; fi
   done

@@ -10,7 +10,7 @@ LLMs write code well and write *about* code badly. They leave their working memo
 
 **Comments** should be as short as possible while carrying as much relevant information as possible, and exist only where relevant — never as one giant block. Before keeping one, ask: *"What do I actually care about here — is this for a human, or just the LLM's scratchpad?"* Keep intent, *why* over *what*, trade-offs, constraints, gotchas, links to context, and required public-API docs. Cut narration, notes-to-self (`// as requested`, `// updated to handle X`), commented-out code, and doc dumps.
 
-**Descriptions** should be *composed*, not just de-slopped: a strong lead, a real **Why**, the **How** that isn't obvious from the diff, and any **interface or behavior change** a consumer must notice — in the repo's own template shape when one exists. Two hard lines: the tool **never invents the Why** (if the motivation isn't in the diff, a ticket, or the branch context, it asks or leaves a placeholder), and **never carries a claim the diff doesn't back** (no phantom tests, no overstated scope).
+**Descriptions** should be *composed*, not just de-slopped: a strong lead, a real **Why**, the **How** that isn't obvious from the diff, and any **interface or behavior change** a consumer must notice — in the repo's own template shape when one exists, and inside a **one-minute reading budget** (one-line bullets, ~200-300 words; accuracy does not excuse length). Two hard lines: the tool **never invents the Why** (if the motivation isn't in the diff, a ticket, or the branch context, it asks or leaves a placeholder), and **never carries a claim the diff doesn't back** (no phantom tests, no overstated scope).
 
 Review is the backstop; the bundled rule does prevention. The plugin holds itself to the same bar — its own files are kept lean.
 
@@ -76,7 +76,7 @@ Out-of-band releases (no PR): run the **auto version bump** workflow manually (A
 **Behavioral evals** — LLM smoke tests (they need CLI auth and network, so they're not CI gates):
 
 - `eval/run.sh` drives the real `comment-bloat-review` skill against a sentinel-tagged fixture: `CMT_B*` planted bloat must be flagged for deletion, `CMT_T*` warranted docs must be *tightened* (not deleted), `CMT_K*` keepers must survive. Scores recall, action, and precision. The planted slop is modeled on the real in-the-wild patterns catalogued in [`docs/anti-patterns.md`](docs/anti-patterns.md).
-- `eval/run_description.sh` drives `pr-description-review` to rewrite weak drafts against real diffs across five scenarios — **session** (use the available Why, surface the behavior change), **thin-why** (never fabricate a missing Why), **iface** (surface a signature change), **claims** (drop claims the diff doesn't back), **template** (compose inside the repo's PR template, not the skill's own shape). Scoring is on qualities, not exact strings.
+- `eval/run_description.sh` drives `pr-description-review` to rewrite weak drafts against real diffs across six scenarios — **session** (use the available Why, surface the behavior change), **thin-why** (never fabricate a missing Why), **iface** (surface a signature change), **claims** (drop claims the diff doesn't back), **template** (compose inside the repo's PR template, no invented headings), **compress** (an accurate-but-overlong draft must shrink to the one-minute budget without losing substance). Scoring is on qualities, not exact strings.
 
 ```bash
 bash eval/run.sh && bash eval/run_description.sh   # RUNS=n to repeat, MODEL=… to pin
