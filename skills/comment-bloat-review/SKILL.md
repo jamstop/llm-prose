@@ -34,13 +34,37 @@ git diff | python3 scripts/deslop.py --diff
 - **Stale/contradictory** — comment no longer matches the changed code. Fix or delete.
 - **Commented-out code** — dead code left behind. Delete (it's in git history).
 - **Misplaced** — one big block where 1-2 inline notes at the tricky spots would serve better.
+- **Design-doc density** — the trap the other patterns miss: a comment that is *correct and informative* but oversized for the code it annotates. Tells: multiple sentences of rationale chained with em-dashes; cross-references and narrative ("see the migration plan…", "that write path ships with…"); a doc comment longer than the function under it. Being packed with real information is not a defense — it's the failure mode. **Tighten to 1-2 direct lines about the adjacent code**; rationale at paragraph scale belongs in the PR description, the commit message, or docs, where it has room and an audience.
+
+  ```swift
+  // Before — every clause true, none of it earning its place here:
+  /// Re-hydrates stored clips with their joined creator identity. Creator
+  /// Profiles are the only join — one batch query for the whole set, not
+  /// one per clip. Every other collection is already a column on the clip row.
+
+  // After — one direct line about what the reader needs at this callsite:
+  /// Loads all creator profiles in one batch query — no per-clip lookups.
+  ```
 
 ## 3. Keep comments that earn their place
 
 A comment earns its tokens when it explains what code **cannot**: intent, *why* over *what*, non-obvious trade-offs, constraints/invariants, gotchas, links to context (ticket/RFC/bug), required API doc conventions, safety/security/legal notes.
 
-For each candidate, ask two things: **"What do I actually care about here — is this for a human or just the LLM's scratchpad?"** (keep human-relevant intent; cut scratchpad) and **"Could the code change so the comment isn't needed?"** (a clearer name or a named constant often beats a comment). Comments should be as short as possible while holding as much relevant info as possible, and live only where relevant.
+For each candidate, ask two things: **"What do I actually care about here — is this for a human or just the LLM's scratchpad?"** (keep human-relevant intent; cut scratchpad) and **"Could the code change so the comment isn't needed?"** (a clearer name or a named constant often beats a comment).
+
+The bar is **annotation, not documentation**: a comment's job is to mark the one non-obvious thing about the code directly under it, in the fewest words that do it — usually one line, two at most. "It holds a lot of relevant information" is how bloat defends itself; relevance decides *whether* a comment exists, brevity decides its *size*, and information that outgrows two lines belongs in the PR, commit message, or docs.
+
+**Review as a skeptical stranger, especially for comments you wrote.** If you authored the diff, the pass tends to confirm your own taste — the density that felt justified while writing still feels justified while reviewing. Counter it mechanically: for every comment over two lines, draft the one-line version first, then argue for each clause you'd restore. Most don't come back.
+
+**If you wrote these comments in the current session, don't self-review — delegate.** Your context is where the bias lives: the rationale that justified each comment is still in it. Launch a fresh subagent (the Task/agent tool in Cursor and Claude Code) whose prompt contains only this skill's path (to read and follow) and the diff — no conversation history — and have it return the flag list; then apply its calls, arguing only against clear mistakes. If subagents aren't available, fall back to the draft-the-one-line-version protocol above on every multi-line comment, no exceptions.
 
 ## 4. Output
 
 Group by file. For each flagged comment give: location, category, and a concrete fix (delete, or tightened rewrite). Lead with a one-line verdict (e.g. "4 to delete, 2 to tighten, rest fine"). When asked, apply the edits directly. Keep the report tight.
+
+## 5. Final checks — verify each before reporting
+
+1. `deslop` ran (or you noted why it couldn't); its hits are in the report.
+2. **Every kept comment is 1-2 lines and annotates the code directly under it.** For each one over two lines, you drafted the one-line version and argued each clause back in.
+3. No kept comment narrates the code, restates a signature, or tells a story that belongs in the PR/docs — *true and informative* did not excuse *oversized*.
+4. If you wrote these comments in this session, a fresh subagent made the calls — not you.

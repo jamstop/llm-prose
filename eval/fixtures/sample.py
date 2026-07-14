@@ -73,3 +73,14 @@ def normalize_currency(raw):
         return "usd"
     # CMT_K4 ISO 4217 codes are case-insensitive; Stripe rejects upper-case, so force lower
     return raw.strip().lower()
+
+
+def hydrate_creators(clips, db):
+    # CMT_T2 Re-hydrates stored clips with their joined creator identity. Creator
+    # profiles are the only join here -- one batch query for the whole set rather
+    # than one per clip, because the N+1 lookup pattern was the top regression in
+    # the last offline-mode audit. Every other collection a clip needs is already
+    # a column on the clip row itself, so no further joins are required, and the
+    # write path that would change that ships with the downloader migration.
+    profiles = db.batch_profiles({c.creator_id for c in clips})
+    return [(c, profiles.get(c.creator_id)) for c in clips]
