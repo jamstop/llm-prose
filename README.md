@@ -23,6 +23,7 @@ Review is the backstop; the bundled rule does prevention. The plugin holds itsel
 | `/prose` | wrapping up a branch or reviewing a PR | both passes, figures out the target itself |
 | `/prose-code-comments` | you only care about comments | flags comment bloat, proposes fixes |
 | `/prose-pr-description` | you only care about the write-up | verdict + ready-to-paste rewrite |
+| `/prose-post` | you want the review **on the PR** (yours or a teammate's) | posts apply-able artifacts: inline suggestions for a few fixes, a stacked fix PR for many, plus one sticky summary comment |
 
 Targeting is automatic: with no argument it reviews the current branch (or its open PR); name a PR and it reviews that, e.g. `/prose 1242`. Ask it to apply the changes and it edits the comments and updates the PR body directly.
 
@@ -95,7 +96,8 @@ pip install pytest && python -m pytest skills/comment-bloat-review/scripts/tests
 
 - **`skills/review-prose`** — context-aware entry point; auto-activates. Detects git/PR context and runs both passes against the right target.
 - **`skills/comment-bloat-review`, `skills/pr-description-review`** — the rubrics. `disable-model-invocation`, so they load only when named (by `review-prose` or a command) and don't fire ambiently.
-- **`commands/`** — the three slash commands above.
+- **`skills/post-prose-review`** — turns the review into apply-able GitHub artifacts: a batched review of one-click suggestions when there are a few fixes, a **stacked fix PR** (base = the PR's head branch, so merging it lands on their branch, never `main`) when there are many, and a single marker-upserted sticky comment carrying the verdict and description rewrite. Everything it posts is opt-in for the PR owner; it never merges, force-pushes, or edits someone else's PR. Also `disable-model-invocation` — it writes to GitHub, so it runs only when explicitly asked.
+- **`commands/`** — the four slash commands above.
 - **`rules/llm-prose.mdc`** — Cursor-only, globbed to code files, not always-on. Write-time comment discipline.
 - **`skills/comment-bloat-review/scripts/deslop.py`** — a stdlib-only, language-agnostic deterministic pre-pass bundled *inside* the skill, covering only the two mechanical cases: notes-to-self / LLM residue and commented-out code. Bundled because Cursor exposes no plugin-root path or install hook — a script in the skill's own `scripts/` dir is the one mechanism that reliably runs from any repo, with no model and no install. Anything debatable is left to the skill's judgment. Rules and rationale: [RULES.md](skills/comment-bloat-review/scripts/RULES.md). (On Python-only repos, `eradicate` and `pydoclint`/`docsig` are mature deeper checks; deslop's niche is language-agnostic and always-on.)
 
@@ -118,7 +120,7 @@ The rubrics distill a few canonical sources — read these for the long form:
 llm-prose/
 ├── .cursor-plugin/plugin.json
 ├── .claude-plugin/{plugin,marketplace}.json
-├── commands/{prose,prose-code-comments,prose-pr-description}.md
+├── commands/{prose,prose-code-comments,prose-pr-description,prose-post}.md
 ├── rules/llm-prose.mdc            # Cursor only
 ├── docs/anti-patterns.md          # sourced gallery of real bloat + fixes
 ├── eval/                          # behavioral evals + fixtures (comments & descriptions)
@@ -126,6 +128,7 @@ llm-prose/
 └── skills/
     ├── review-prose/SKILL.md
     ├── pr-description-review/SKILL.md
+    ├── post-prose-review/SKILL.md
     └── comment-bloat-review/
         ├── SKILL.md
         └── scripts/               # deslop + RULES.md + pytest suite
