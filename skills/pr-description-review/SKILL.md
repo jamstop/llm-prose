@@ -15,6 +15,7 @@ Two hard constraints up front, because they're the ones most often broken: **a r
 - Description + metadata: `gh pr view <n> --json title,body,files` (or `gh pr view` on current branch).
 - Actual changes: `gh pr diff <n>` (or `git diff <base>...HEAD` locally). The description must match the diff — don't trust it blindly.
 - **The repo's PR template** — check `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, and `.github/PULL_REQUEST_TEMPLATE/`. Note its exact headings and furniture: a ticket line (`Resolves: …`), required sections, admonitions (`> [!NOTE]`), placeholder comments. Also skim 2-3 recently merged PRs (`gh pr list --state merged`) to see the house style in practice.
+- **The comment pass's harvest**, when running as part of `/prose`: rationale the `comment-bloat-review` pass moved out of oversized comments with destination "PR description" is first-class input here — it's diff-backed Why/How written by the author, not invention. Weave it into the relevant section; don't paste it verbatim if it needs the same tightening as any other prose.
 
 ## 2. Required content
 

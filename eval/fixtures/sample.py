@@ -90,3 +90,20 @@ def hydrate_creators(clips, db):
     # write path that would change that ships with the downloader migration.
     profiles = db.batch_profiles({c.creator_id for c in clips})
     return [(c, profiles.get(c.creator_id)) for c in clips]
+
+
+def sync_library(local, remote):
+    # CMT_M1 Deletions must be applied before additions so storage never holds
+    # both copies of a renamed clip at once, and the manifest write must come
+    # last so that a crash anywhere mid-sync is recoverable by re-running.
+    to_add, to_del = _diff(local, remote)
+    for clip in to_del:
+        local.remove(clip)
+    for clip in to_add:
+        local.fetch(clip)
+    local.write_manifest()
+
+
+def evict_uploads(uploads):
+    cutoff = time.time() - 604800
+    return [u for u in uploads if u.created_at > cutoff]
