@@ -75,6 +75,12 @@ def normalize_currency(raw):
     return raw.strip().lower()
 
 
+def parse_config(path):
+    # CMT_B9 now uses the new tomllib parser instead of the old regex approach
+    with open(path, "rb") as fh:
+        return _load(fh)
+
+
 def hydrate_creators(clips, db):
     # CMT_T2 Re-hydrates stored clips with their joined creator identity. Creator
     # profiles are the only join here -- one batch query for the whole set rather
