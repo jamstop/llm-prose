@@ -34,7 +34,7 @@ sessions is unchanged.
   both for audit purposes and for any future absolute-lifetime policy that
   might want to measure against it.
 - **No schema change** — the `last_seen` column already existed on the session
-  model; it was simply never written after login, which is the entire bug, so
+  model; it was never written after login, which is the entire bug, so
   no migration is required and a rollback is a pure code revert with no data
   implications to reason about.
 
