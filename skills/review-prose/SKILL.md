@@ -23,10 +23,10 @@ For large diffs, work per file (`--name-only` first, then diff the files that ac
 
 ## 2. Run both passes
 
-Apply each rubric to the resolved target:
+Apply each rubric to the resolved target, **comments first** — its output feeds the description pass:
 
 - **Comments** — follow the `comment-bloat-review` skill. It begins with a bundled deterministic pre-pass (`deslop`) on the diff, then layers judgment on top.
-- **Description** — follow the `pr-description-review` skill (skip if not a git/PR context).
+- **Description** — follow the `pr-description-review` skill (skip if not a git/PR context). Carry over the comment pass's harvest: rationale it moved out of comments with destination "PR description" is diff-backed Why/How material for the rewrite.
 
 ## 3. Output
 
