@@ -1,6 +1,6 @@
 ---
 name: prose-post
-description: Run the prose review on a PR and post the results to GitHub — one-click suggestions or a stacked fix PR the owner can merge, plus one sticky summary comment.
+description: Run the prose review on a PR and post the results to GitHub — one-click suggestions plus one sticky summary comment; a stacked fix PR only on explicit request.
 ---
 
 # Post Prose Review to a PR

@@ -32,4 +32,4 @@ Apply each rubric to the resolved target, **comments first** — its output feed
 
 Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight.
 
-For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command. To leave the review **on the PR itself** — one-click suggestions or a stacked fix PR the owner can merge — follow the `post-prose-review` skill, but only when the user explicitly asks to post.
+For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command. To leave the review **on the PR itself** — one-click suggestions the owner can apply — follow the `post-prose-review` skill, but only when the user explicitly asks to post.
