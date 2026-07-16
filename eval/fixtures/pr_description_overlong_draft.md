@@ -2,9 +2,9 @@
      modeled on a real field failure — an AI description whose every clause was
      true and diff-backed, but whose paragraph-sized, em-dash-chained bullets
      made it unabsorbable. Nothing here is false; the defect is pure density.
-     The rewrite must come back inside the one-minute budget (one-line bullets,
-     well under half these words) without losing the Why, the behavior change,
-     or the verify steps. -->
+     The rewrite must shed the density (one-line bullets, well under half these
+     words — the excess is diff echo) without losing the Why, the behavior
+     change, or the verify steps. -->
 
 ## Make session expiry idle-based rather than absolute
 

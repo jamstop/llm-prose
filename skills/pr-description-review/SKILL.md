@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Judge a PR description against its actual diff, then **compose** one that is genuinely good to read — not just stripped of slop. Two distinct jobs: a short *verdict* (what's weak) and a *crafted rewrite* (what a reviewer would be glad to open). Spend real effort on the rewrite; that's the deliverable.
 
-Two hard constraints up front, because they're the ones most often broken: **a reviewer must absorb the description in about a minute** — a bullet is one line, and accuracy does not excuse length; and **if you wrote the draft in this session, a fresh subagent judges it, not you** (section 7).
+Two hard constraints up front, because they're the ones most often broken: **the description must answer What, Why, and How and surface interface/behavior changes (section 2) — no length target ever justifies cutting that content**; and **if you wrote the draft in this session, a fresh subagent judges it, not you** (section 7).
 
 ## 1. Gather
 
@@ -41,7 +41,7 @@ Include when relevant, don't manufacture: test plan / how to verify, screenshots
 
 De-slopped is the floor, not the goal. A great description is *crafted* — it respects the reviewer's time and makes the change easy to hold in your head. Form serves the reader and is never the sin; **decoration over empty content** is (adjectives without facts, sections that echo the diff, polish hiding a missing Why). Judge by substance-per-line — and by the reader's clock:
 
-**The one-minute budget.** A description a reviewer can't absorb in about a minute is failing *whatever its accuracy* — dense, true, em-dash-chained prose is the same disease as design-doc comments, and "every clause is informative" is how it defends itself. Concretely: a **bullet is one line** (a second line means it's two bullets or too much detail); the whole body stays around **200-300 words** for a typical PR; design rationale beyond that lives in the code review conversation, a doc, or the commit messages — link, don't inline. When drafting a bullet, write the long version if you must, then keep only the clause a reviewer needs to *route their attention* — they read the description to decide where to look, not to skip reading the diff.
+**The one-minute budget — a diagnostic, not a target.** The reviewer reads the description to decide where to look, so the real test is: **every line either routes attention or states something a consumer must know.** A description a reviewer can't absorb in about a minute usually fails that test — dense, true, em-dash-chained prose is the same disease as design-doc comments, and "every clause is informative" is how it defends itself. Concretely: a **bullet is one line** (a second line means it's two bullets or too much detail); around **200-300 words is the smell threshold for a typical PR**, scaling with the PR's genuine surface — a schema migration with breaking changes earns more words than a refactor. When a description runs over, **diagnose what the words are spent on** before cutting: diff echo and narration → delete; design rationale → link to a doc/commit/review thread, don't inline; content addressed to someone other than this PR's reviewer (adoption guides, instructions for another team) → relocate it to where its audience is and leave a pointer. What/Why/How and interface/behavior callouts are never the cut.
 
 Aim for, in priority order:
 
@@ -96,13 +96,13 @@ This is the description-side analogue of "never invent the Why": never carry a c
 
 ## 6. Output
 
-Lead with a one-line **verdict** (what's missing or weak), then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant, **in the repo template's shape when one exists**. Drop headings that don't apply (in a template, leave its required sections in place with their placeholder comments instead). If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
+Lead with a one-line **verdict** stated in content terms — which of What/Why/How is missing or weak, what interface/behavior change is buried, which claim the diff doesn't back. Mention length only by naming what the words are spent on (diff echo, inlined design rationale, wrong-audience content), never as a bare word count. Then a **ready-to-paste rewrite** crafted to the bar in Section 4 — strong lead, scannable structure, real Why, behavior/interface callouts where relevant, **in the repo template's shape when one exists**. Drop headings that don't apply (in a template, leave its required sections in place with their placeholder comments instead). If the PR is too large or mixed to review well, say so and suggest a split — no description makes a grab-bag reviewable. When asked, update the PR with `gh pr edit <n> --body`.
 
 ## 7. Final checks — verify each before delivering
 
-1. **Length:** readable in about a minute; every bullet is one line; ~200-300 words for a typical PR. If over, cut detail, not sections.
-2. **Template:** ticket line present; every required heading present with its exact name; no invented sections; furniture preserved.
-3. **Why:** real and cited, or an explicit author-prompt — never invented.
-4. **Claims:** every sentence is backed by the diff (section 5); test claims verified against actual test files.
-5. **Interface/behavior:** anything a consumer must notice is surfaced, not buried.
-6. **Authorship:** if you wrote this draft (or the PR) in the current session, delegate the judgment — launch a fresh subagent with only this skill and the diff, no conversation history, and apply its verdict. Your context contains the rationale that justified every excess word; a clean reader is the only honest judge. If subagents aren't available, finish with one explicit audit pass: reread the rewrite asking *"what would a skeptical human reviewer still call AI-written or oversized?"* — and fix what you name before delivering.
+1. **Content:** What, Why, and How are each answered; the Why is real and cited, or an explicit author-prompt — never invented.
+2. **Interface/behavior:** anything a consumer must notice is surfaced, not buried — and nothing in it was cut to make a length number.
+3. **Claims:** every sentence is backed by the diff (section 5); test claims verified against actual test files.
+4. **Template:** ticket line present; every required heading present with its exact name; no invented sections; furniture preserved.
+5. **Length:** readable in about a minute; every bullet is one line. If over, you named what the excess words were spent on (echo, inlined rationale, wrong-audience content) and cut *that* — not sections, not required content.
+6. **Authorship:** if you wrote this draft (or the PR) in the current session — or you're re-judging it after pushback — delegate the judgment — launch a fresh subagent with only this skill and the diff, no conversation history, and apply its verdict. Your context contains the rationale that justified every excess word; a clean reader is the only honest judge. If subagents aren't available, finish with one explicit audit pass: reread the rewrite asking *"what would a skeptical human reviewer still call AI-written or oversized?"* — and fix what you name before delivering.

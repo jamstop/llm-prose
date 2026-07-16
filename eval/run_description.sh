@@ -14,8 +14,8 @@
 #   claims    an overclaiming draft; phantom claims must be dropped.
 #   template  the repo has a PR template; its shape must win over the exemplar,
 #             with no invented headings.
-#   compress  an accurate-but-overlong draft; the rewrite must come back inside
-#             the one-minute budget without losing the substance.
+#   compress  an accurate-but-overlong draft; the rewrite must cut the density
+#             (the words are spent on diff echo) without losing the substance.
 #
 # Pass = every scenario passes every run. Smoke test (LLM + network), not a CI gate.
 #
@@ -220,7 +220,7 @@ Context: ticket SUPPORT-1421 — users on long forms were logged out mid-task be
 
 # --- scenario: accurate-but-overlong draft (must compress) --------------------
 scn_compress() {
-  echo "  [compress] accurate-but-overlong draft must shrink to the one-minute budget"
+  echo "  [compress] accurate-but-overlong draft must shed its density, keep its substance"
   sfail=0
   OUT=$(agent "Use the pr-description-review skill from the loaded plugin to REWRITE the PR description below to its bar. $REWRITE_INSTR
 
