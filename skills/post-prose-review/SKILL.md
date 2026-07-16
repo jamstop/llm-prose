@@ -8,12 +8,25 @@ disable-model-invocation: true
 
 Run the prose review, then deliver it **on the PR** in a form the owner can apply with one click and ignore without cost. This skill writes to GitHub; everything it posts is opt-in for the owner — never merge anything, never push to the PR's own branch, never edit someone else's PR body.
 
+The PR may be named by number or URL; a URL works from any directory — pass it (or `--repo owner/repo`) to every `gh` call.
+
 ## 1. Review first
 
 Produce the findings exactly as the rubric skills define them:
 
 - Comments: follow `comment-bloat-review` on the PR diff (`gh pr diff <n>`). Keep each fix line-anchored: file, line range, and the replacement text (empty = delete).
 - Description: follow `pr-description-review` for the verdict and rewrite.
+
+The `deslop` pre-pass reads files from disk, so it needs the PR branch checked out. When the PR isn't from the repo you're in (or you're in no repo at all), don't touch any existing checkout — use a throwaway worktree and clean it up:
+
+```
+git -C <local-clone> fetch origin <headRefName>
+git -C <local-clone> worktree add -f /tmp/prose-<n> origin/<headRefName>
+# run deslop from /tmp/prose-<n>, then:
+git -C <local-clone> worktree remove -f /tmp/prose-<n>
+```
+
+With no local clone available, skip deslop (the rubric says how) and review on the diff alone.
 
 **Then filter by confidence.** Posting to a PR is louder than reporting to the user, so the bar is higher: an inline suggestion or stacked-PR edit must be a finding you'd defend to the author in person — deslop hits and clear rubric cases qualify. Anything borderline (a tighten you're only mostly sure about, a judgment call the author might reasonably reject) goes as a short take-or-leave note in the sticky comment, or nowhere. This is how the established review bots keep their welcome: post few, high-confidence findings rather than everything you noticed.
 
