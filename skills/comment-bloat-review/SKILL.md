@@ -28,6 +28,8 @@ git diff | python3 scripts/deslop.py --diff
 
 `scripts/deslop.py` is relative to this skill's directory. It reproducibly flags the two unambiguous cases — notes-to-self / LLM residue and commented-out code — and stays silent on everything debatable. Treat its hits as already decided; spend your own judgment on the rest (narration, why-over-what, doc-dump tightening, staleness). If the script can't be located or run for any reason, just proceed with judgment — it's an accelerant, not a gate. (On Python-only repos, `eradicate` and `pydoclint`/`docsig` are mature deeper checks for commented-out code and docstrings.)
 
+Run it with the system `python3` exactly as above — it is stdlib-only, so it never needs a project environment. Never invoke it (or anything else during this review) through `uv run`, `uv sync`, or another environment manager: those can silently regenerate dependency lockfiles, and on machines where the package index is a local mirror, the regenerated lockfile rewrites every registry URL. A prose review must change nothing but comments and the description. If `git status` shows a lockfile (`uv.lock`, `package-lock.json`, `Podfile.lock`, `Cargo.lock`, …) modified after the review, restore it before finishing.
+
 ## 2. Flag these patterns
 
 - **Narration** — restates the code: `// increment counter`, `// import the module`, `// return result`. Delete.

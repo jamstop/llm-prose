@@ -32,4 +32,6 @@ Apply each rubric to the resolved target, **comments first** — its output feed
 
 Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight.
 
+The review's write set is comments and the description — nothing else. Run every helper with the system `python3`, never `uv run`/`uv sync` or another environment manager that can regenerate a dependency lockfile as a side effect. If a lockfile shows up modified afterward, restore it.
+
 For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command. To leave the review **on the PR itself** — one-click suggestions the owner can apply — follow the `post-prose-review` skill, but only when the user explicitly asks to post.
