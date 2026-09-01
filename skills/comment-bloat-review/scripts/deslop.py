@@ -121,6 +121,21 @@ def _read_source(path: str | Path) -> str:
         raise OSError(f"{target} is not UTF-8 text") from error
 
 
+def _after_js_control_header(prefix: str) -> bool:
+    match = re.match(r"^\s*(?:if|while|for|with)\s*\(", prefix)
+    if not match:
+        return False
+    depth = 1
+    for index in range(match.end(), len(prefix)):
+        if prefix[index] == "(":
+            depth += 1
+        elif prefix[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return not prefix[index + 1:].strip()
+    return False
+
+
 # --- comment extraction ------------------------------------------------------
 # A small character scanner that walks the source once, skipping string and
 # triple-quoted literals so comment markers inside them don't fire. Returns
@@ -176,13 +191,11 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
                 previous < 0
                 or text[previous] in "=(:,[!&|?{};>+-*%^~<"
                 or bool(re.search(
-                    r"\b(?:return|case|throw|yield|await|else|do)\s*$",
+                    r"(?:^|[^\w.$])(?:return|case|throw|yield|await|else|do|"
+                    r"typeof|void|delete|new)\s*$",
                     text[:i],
                 ))
-                or bool(re.search(
-                    r"\b(?:if|while|for|with)\s*\([^;\n]*\)\s*$",
-                    prefix,
-                ))
+                or _after_js_control_header(prefix)
             )
             if can_start:
                 start = i
@@ -371,7 +384,7 @@ def _restates_next_code(cleaned: str, source_lines: list[str],
     return False
 
 
-_FENCE_MARKER = re.compile(r"^(`{3,}|~{3,})(.*)$")
+_FENCE_MARKER = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
 def _advance_fence(line: str, opened: tuple[str, int] | None
@@ -403,9 +416,11 @@ def _fenced_line_comment_lines(comments: list[Comment], source_lines: list[str],
         if marker is None or "\n" in comment.text:
             previous_line = None
             continue
-        cleaned = comment.text.strip()
+        cleaned = comment.text.rstrip()
         if marker == "//":
-            cleaned = cleaned.lstrip("/!").lstrip()
+            cleaned = cleaned.lstrip("/!")
+        if cleaned.startswith(" "):
+            cleaned = cleaned[1:]
         opened, delimiter = _advance_fence(cleaned, opened)
         if opened is not None and not delimiter:
             fenced.add(comment.line)
@@ -566,6 +581,28 @@ _GENERATED = re.compile(
 _GENERATED_PATH = re.compile(r"(?:^|/)Generated/")
 
 
+def _has_generated_header(source_lines: list[str], comments: list[Comment]) -> bool:
+    comment_lines = {
+        line
+        for comment in comments
+        for line in range(comment.line, comment.line + comment.text.count("\n") + 1)
+    }
+    line = 1
+    while line <= len(source_lines) and not source_lines[line - 1].strip():
+        line += 1
+    if line <= len(source_lines) and source_lines[line - 1].startswith("#!"):
+        line += 1
+    while line <= len(source_lines):
+        if not source_lines[line - 1].strip() or line in comment_lines:
+            line += 1
+            continue
+        break
+    return any(
+        comment.line < line and _GENERATED.search(_clean(comment.text))
+        for comment in comments
+    )
+
+
 def _body_lines(comment: Comment) -> list[tuple[int, str]]:
     """Return physical source lines for a comment body.
 
@@ -577,31 +614,20 @@ def _body_lines(comment: Comment) -> list[tuple[int, str]]:
             for offset, text in enumerate(lines)]
 
 
+def _markdown_body_lines(text: str) -> list[str]:
+    lines = text.splitlines() or [text]
+    return [re.sub(r"^\s*\* ?", "", line.rstrip()) for line in lines]
+
+
 def lint_source(path: str, source: str, language: str, enabled=None) -> list[Finding]:
     profile = _PROFILES.get(language)
     if profile is None:
         return []
     source_lines = source.splitlines()
     header = "\n".join(source_lines[:5])
-    first_content_line = next(
-        (index for index, line in enumerate(source_lines[:5], 1) if line.strip()),
-        None,
-    )
-    if first_content_line and source_lines[first_content_line - 1].startswith("#!"):
-        first_content_line = next(
-            (
-                index
-                for index, line in enumerate(
-                    source_lines[first_content_line:5],
-                    first_content_line + 1,
-                )
-                if line.strip()
-            ),
-            None,
-        )
-    generated_header = any(
-        comment.line == first_content_line and _GENERATED.search(_clean(comment.text))
-        for comment in extract_comments(header, profile)
+    generated_header = _has_generated_header(
+        source_lines[:5],
+        extract_comments(header, profile),
     )
     if _GENERATED_PATH.search(path) or generated_header:
         return []
@@ -612,8 +638,11 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
         parts = _body_lines(comment)
         code_lines: set[int] = set()
         opened: tuple[str, int] | None = None
-        for physical_line, text in parts:
-            opened, delimiter = _advance_fence(text, opened)
+        for (physical_line, text), markdown_line in zip(
+            parts,
+            _markdown_body_lines(comment.text),
+        ):
+            opened, delimiter = _advance_fence(markdown_line, opened)
             if opened is not None and not delimiter:
                 fenced_lines.add(physical_line)
             elif not delimiter and physical_line not in fenced_lines \
@@ -690,7 +719,7 @@ def lint_body(body: str, enabled=None) -> list[Finding]:
     fenced: set[int] = set()
     opened: tuple[str, int] | None = None
     for index, line in enumerate(lines, 1):
-        opened, delimiter = _advance_fence(line.lstrip(), opened)
+        opened, delimiter = _advance_fence(line, opened)
         if delimiter or opened is not None:
             fenced.add(index)
 
