@@ -198,13 +198,13 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
                 }
                 and (token_start < 0 or text[token_start] not in ".$")
             )
-            control_context = (
-                previous >= 0
-                and text[previous] == ")"
-                and _after_js_control_header(
-                    text[text.rfind("\n", max(0, i - 4096), i) + 1:i]
-                )
-            )
+            control_context = False
+            if previous >= 0 and text[previous] == ")":
+                control_start = max(0, i - 4096)
+                newline = text.rfind("\n", control_start, i)
+                if newline >= 0:
+                    control_start = newline + 1
+                control_context = _after_js_control_header(text[control_start:i])
             can_start = (
                 previous < 0
                 or text[previous] in "=(:,[!&|?{};>+-*%^~<"
