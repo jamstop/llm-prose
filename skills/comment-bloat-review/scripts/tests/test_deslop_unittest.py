@@ -1,5 +1,7 @@
 import importlib.util
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -84,6 +86,22 @@ class PrecisionTests(unittest.TestCase):
     def test_type_comments_and_scala_cli_directives_are_exempt(self):
         self.assertNotIn("commented-out-code", rules("# type: Result\n", "python"))
         self.assertNotIn("commented-out-code", rules("//> using scala 3.3.1\n", "scala"))
+
+    def test_source_reader_rejects_symlinks_and_oversized_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target.py"
+            target.write_text("# safe\n", encoding="utf-8")
+            link = root / "link.py"
+            os.symlink(target, link)
+            with self.assertRaises(OSError):
+                deslop._read_source(link)
+
+            large = root / "large.py"
+            with large.open("wb") as stream:
+                stream.truncate(deslop._MAX_SOURCE_BYTES + 1)
+            with self.assertRaises(OSError):
+                deslop._read_source(large)
 
 
 class BlockCommentTests(unittest.TestCase):

@@ -20,11 +20,15 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
+import stat
 import sys
 import textwrap
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+_MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
 # --- language profiles -------------------------------------------------------
 # A profile says how to find comments in a file: line markers, block-comment
@@ -82,6 +86,36 @@ def language_for_path(path: str) -> str | None:
         if path.endswith(ext):
             return lang
     return None
+
+
+def _read_source(path: str | Path) -> str:
+    target = Path(path)
+    metadata = target.lstat()
+    if not stat.S_ISREG(metadata.st_mode):
+        raise OSError(f"{target} is not a regular file")
+    if metadata.st_size > _MAX_SOURCE_BYTES:
+        raise OSError(f"{target} exceeds {_MAX_SOURCE_BYTES} bytes")
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(target, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise OSError(f"{target} changed while opening")
+        if not stat.S_ISREG(opened.st_mode):
+            raise OSError(f"{target} is not a regular file")
+        if opened.st_size > _MAX_SOURCE_BYTES:
+            raise OSError(f"{target} exceeds {_MAX_SOURCE_BYTES} bytes")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            payload = stream.read(_MAX_SOURCE_BYTES + 1)
+        if len(payload) > _MAX_SOURCE_BYTES:
+            raise OSError(f"{target} exceeds {_MAX_SOURCE_BYTES} bytes")
+    finally:
+        os.close(descriptor)
+    try:
+        return payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OSError(f"{target} is not UTF-8 text") from error
 
 
 # --- comment extraction ------------------------------------------------------
@@ -515,8 +549,7 @@ def lint_path(path: str, enabled=None) -> list[Finding]:
     language = language_for_path(path)
     if language is None:
         return []
-    with open(path, "r", encoding="utf-8") as fh:
-        return lint_source(path, fh.read(), language, enabled)
+    return lint_source(path, _read_source(path), language, enabled)
 
 
 # --- PR-description lint ----------------------------------------------------
