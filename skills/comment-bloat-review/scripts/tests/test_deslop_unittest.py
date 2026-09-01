@@ -62,21 +62,33 @@ class PrecisionTests(unittest.TestCase):
         ):
             self.assertEqual(set(), rules(source))
 
-    def test_fenced_doc_examples_are_ignored(self):
-        source = (
-            "/**\n * Example:\n * ```swift\n * Analytics()\n * let x = compute()\n"
-            " * ```\n */\nfunc run() {}\n"
-        )
-        self.assertNotIn("commented-out-code", rules(source))
-
-    def test_fenced_examples_across_line_comments_are_ignored(self):
-        for prefix in ("//", "///"):
-            with self.subTest(prefix=prefix):
+    def test_fenced_doc_examples_are_ignored_by_every_rule(self):
+        for fence in ("```", "~~~"):
+            with self.subTest(fence=fence):
                 source = (
-                    f"{prefix} Example:\n{prefix} ```go\n"
-                    f"{prefix} value := load()\n{prefix} ```\nfunc run() {{}}\n"
+                    f"/**\n * Example:\n * {fence}swift\n * Analytics()\n"
+                    f" * as requested\n * Step 1: Add widget\n"
+                    f" * Add widget\n * {fence}\n */\n"
+                    "widgets.append(widget)\n"
                 )
-                self.assertNotIn("commented-out-code", rules(source, "go"))
+                self.assertEqual(set(), rules(source))
+
+    def test_fenced_line_comment_examples_are_ignored_by_every_rule(self):
+        for prefix in ("//", "///"):
+            for fence in ("```", "~~~"):
+                with self.subTest(prefix=prefix, fence=fence):
+                    source = (
+                        f"{prefix} Example:\n{prefix} {fence}go\n"
+                        f"{prefix} value := load()\n{prefix} as requested\n"
+                        f"{prefix} Step 1: Add widget\n"
+                        f"{prefix} Add widget\n{prefix} {fence}\n"
+                        "widgets.append(widget)\n"
+                    )
+                    self.assertEqual(set(), rules(source, "go"))
+
+    def test_rules_resume_after_a_line_comment_fence(self):
+        source = "// ```\n// ignored()\n// ```\n// staleCall()\n"
+        self.assertIn("commented-out-code", rules(source))
 
     def test_block_narration_looks_after_the_entire_comment(self):
         unrelated = "/**\n * Add widget\n */\nlet count = 1\n"

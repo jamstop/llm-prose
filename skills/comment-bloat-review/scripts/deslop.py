@@ -523,7 +523,7 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
     if _GENERATED_PATH.search(path) or generated_header:
         return []
     comments = extract_comments(source, profile)
-    fenced_line_comments = _fenced_line_comment_lines(comments, source_lines, profile)
+    fenced_lines = _fenced_line_comment_lines(comments, source_lines, profile)
     findings: list[Finding] = []
     for comment in comments:
         parts = _body_lines(comment)
@@ -532,15 +532,13 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
         for physical_line, text in parts:
             if text.startswith(("```", "~~~")):
                 in_fence = not in_fence
-            elif (
-                not in_fence
-                and physical_line not in fenced_line_comments
-                and _is_commented_code(text, language)
-            ):
+            elif in_fence:
+                fenced_lines.add(physical_line)
+            elif physical_line not in fenced_lines and _is_commented_code(text, language):
                 code_lines.add(physical_line)
         last_comment_line = comment.line + comment.text.count("\n")
         for physical_line, text in parts:
-            if not text:
+            if not text or physical_line in fenced_lines:
                 continue
             if (not enabled or "notes-to-self" in enabled) and _is_residue(text):
                 findings.append(Finding(
