@@ -81,26 +81,25 @@ def parse_config(path):
         return _load(fh)
 
 
-def hydrate_creators(clips, db):
-    # CMT_T2 Re-hydrates stored clips with their joined creator identity. Creator
-    # profiles are the only join here -- one batch query for the whole set rather
-    # than one per clip, because the N+1 lookup pattern was the top regression in
-    # the last offline-mode audit. Every other collection a clip needs is already
-    # a column on the clip row itself, so no further joins are required, and the
-    # write path that would change that ships with the downloader migration.
-    profiles = db.batch_profiles({c.creator_id for c in clips})
-    return [(c, profiles.get(c.creator_id)) for c in clips]
+def attach_regions(records, db):
+    # CMT_T2 Attaches region metadata to imported records. Regions are the only
+    # joined table here -- one batch query serves the whole set rather than one
+    # lookup per record, because an earlier performance audit found that N+1
+    # pattern on this path. Every other field is stored directly on the record,
+    # so no further joins are required.
+    regions = db.batch_regions({record.region_id for record in records})
+    return [(record, regions.get(record.region_id)) for record in records]
 
 
-def sync_library(local, remote):
+def sync_store(local, remote):
     # CMT_M1 Deletions must be applied before additions so storage never holds
-    # both copies of a renamed clip at once, and the manifest write must come
+    # both copies of a renamed record at once, and the manifest write must come
     # last so that a crash anywhere mid-sync is recoverable by re-running.
     to_add, to_del = _diff(local, remote)
-    for clip in to_del:
-        local.remove(clip)
-    for clip in to_add:
-        local.fetch(clip)
+    for record in to_del:
+        local.remove(record)
+    for record in to_add:
+        local.fetch(record)
     local.write_manifest()
 
 

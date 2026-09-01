@@ -2,10 +2,8 @@
 
 `deslop` is the deterministic pre-pass for `comment-bloat-review`. It is stdlib-
 only, single-file, and bundled in this skill so it runs on every review with no
-install. It covers **only** the two patterns a regex / stdlib parser can decide
-without judgment. Everything ambiguous — narration vs. why, doc-dump tightening,
-staleness, intent — is left to the skill. Precision over recall: when a case is
-debatable, deslop stays silent and the model decides.
+install. It covers conservative cases with deterministic evidence. Ambiguous
+doc tightening, staleness, intent, and prose quality remain judgment calls.
 
 ## How it sees comments
 
@@ -16,8 +14,10 @@ language by file extension. The `'` character is handled per language: a real
 string delimiter (Python, Ruby, JS/TS, shell, SQL), a char/rune literal validated
 by pattern (Rust, Go, C/C++, Java — so a bare lifetime tick `'a` is *not* mistaken
 for a string and doesn't swallow a trailing `//`), or absent entirely (Swift).
-In `--diff` mode the real file on disk is linted and findings are filtered to the
-added line numbers, so diffs keep full-file context.
+Swift extended raw strings and regex literals are skipped. Swift, Kotlin,
+Scala, and Rust block comments track nesting. Findings within multiline block
+comments retain the physical line containing the hit. In `--diff` mode the real
+file on disk is linted and findings are filtered to added line numbers.
 
 Requires Python 3.8+ (stdlib only; no third-party packages).
 
@@ -61,6 +61,34 @@ A comment whose body reads as code rather than prose.
     stays silent.
   - Env-var-prefixed usage examples (`MODEL=foo bash run.sh`) — documentation, not
     dead code. A real `NAME = value` config line with no trailing command still fires.
+  - Trailing annotations beside executable code, prose parentheticals, enum-style
+    mappings, and code examples inside fenced doc comments.
+
+### R3 — numbered step scaffolding  (action: tighten)
+
+Flags comment lines beginning with forms such as `Step 1:` or `Step 2 -`.
+References such as “step 2 of the handshake” remain ordinary prose.
+
+### R4 — adjacent-code narration  (action: tighten)
+
+Flags a short imperative comment only when a non-verb word overlaps the next
+executable line. Rationale connectives (`because`, `avoid`, `to preserve`, and
+similar) exempt why-comments. Trailing comments are not compared with the next
+line, which avoids anchoring a finding to unrelated code.
+
+### Generated files
+
+Files with a generated marker in their first five lines, or an exact
+`Generated/` path segment, are skipped because edits belong in the generator.
+Names such as `GeneratedByHand/` remain in scope.
+
+### PR-description checks
+
+`--body-file` checks deterministic debris: empty sections, authoring placeholder
+comments, empty media placeholders, all-unchecked checklists, session residue,
+and a small high-precision set of filler and politeness phrases. Fenced blocks
+and inline-code spans are ignored. The checks do not assume one repository's
+template, spelling convention, word count, or bullet length.
 
 ## What deslop deliberately does NOT do
 
@@ -72,11 +100,11 @@ A comment whose body reads as code rather than prose.
 
 ## Testing
 
-`tests/` holds the invariants one-per-test (including the false-positive
-boundaries) plus the diff/CLI behavior. Stdlib-only tool, so the only dev
-dependency is `pytest`:
+`tests/` holds the invariants and false-positive boundaries. The portable
+regression suite uses only `unittest`:
 
 ```bash
-pip install pytest
-python -m pytest skills/comment-bloat-review/scripts/tests -q
+python3 -m unittest discover \
+  -s skills/comment-bloat-review/scripts/tests \
+  -p 'test_*unittest.py' -v
 ```

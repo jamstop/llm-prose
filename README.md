@@ -33,32 +33,56 @@ Targeting is automatic: with no argument it reviews the current branch (or its o
 
 ## Install
 
-Install it **once through Claude Code's marketplace.** Cursor (both the IDE and the `cursor-agent` CLI) reads `~/.claude/plugins`, so a single Claude install makes the plugin available in **Claude Code, Cursor IDE, and Cursor CLI** — no per-tool setup, no `--plugin-dir`.
+Install it separately in each client where you want to use it.
+
+**Claude Code marketplace:**
 
 ```bash
 claude plugin marketplace add jamstop/llm-prose   # private repo OK (uses your git auth)
 claude plugin install llm-prose@llm-prose
 ```
 
-Restart/reload each tool once to pick it up.
+Update with `claude plugin update llm-prose@llm-prose`, or enable that
+marketplace's `autoUpdate` setting.
 
-**Updating — it's tool-specific.** `"autoUpdate": true` (in `~/.claude/plugins/known_marketplaces.json`) is honored **only by Claude Code**, on launch. **Cursor does not auto-update** — it loads whatever version is pinned in `~/.claude/plugins/installed_plugins.json` and never checks the remote itself. So:
+### Cursor
 
-- **Claude Code:** with `autoUpdate` on, a new session pulls the latest. Or force it: `claude plugin update llm-prose@llm-prose`.
-- **Cursor (IDE or CLI):** run `claude plugin update llm-prose@llm-prose` explicitly, **then restart Cursor**. (Want hands-off? Run that command from a login hook or alias — Cursor won't do it for you.)
+Cursor may import plugins already installed through Claude Code when **Include
+third-party Plugins, Skills, and other configs** is enabled. This is a
+compatibility feature; Cursor does not document Claude Code's plugin storage
+format as a stable Cursor installation interface.
 
-> Why this and not a Cursor marketplace: Cursor's own marketplace is public-repo + manual review, and Team Marketplaces are Teams/Enterprise + org-scoped. The Claude plugin layer is the practical cross-tool path for a private repo.
-
-### Ad-hoc / dev, without installing
-
-`cursor-agent` can load the plugin straight from a checkout:
+For a Cursor-native local installation, clone the repository and link its plugin
+root:
 
 ```bash
-cursor-agent --plugin-dir /path/to/llm-prose \
-  -p "use the comment-bloat-review skill to review the comments on this branch"
+git clone <repository-url> ~/.local/share/llm-prose
+mkdir -p ~/.cursor/plugins/local
+ln -s ~/.local/share/llm-prose ~/.cursor/plugins/local/llm-prose
 ```
 
-Or copy `skills/`, `commands/`, `rules/` into a project's `.cursor/` (or `.claude/`) dirs — keep skills alongside commands, since commands delegate to skills by name.
+Restart Cursor or run **Developer: Reload Window**. Update by pulling the clone
+and reloading Cursor:
+
+```bash
+git -C ~/.local/share/llm-prose pull
+```
+
+For an ad-hoc Cursor CLI session:
+
+```bash
+agent --plugin-dir ~/.local/share/llm-prose
+```
+
+`--plugin-dir` can be supplied more than once. Teams and Enterprise
+administrators can import a private repository through **Dashboard → Plugins →
+Add Marketplace → Import from Repo**; developers then install it from
+**Customize**. Public plugins can instead be submitted to Cursor's reviewed
+Marketplace. Administrators may disable local plugin imports.
+
+For clients without plugin installation, copy `skills/`, `commands/`, and
+`rules/` into the project's supported configuration directory. Keep skills
+alongside commands because commands delegate to skills by name.
 
 ## Contributing & releasing
 
@@ -99,7 +123,7 @@ pip install pytest && python -m pytest skills/comment-bloat-review/scripts/tests
 - **`skills/post-prose-review`** — turns the review into apply-able GitHub artifacts: a batched review of one-click suggestions (the default — no extra PRs cluttering feeds and notification channels) and a single marker-upserted sticky comment carrying the verdict and description rewrite; a **stacked fix PR** (base = the PR's head branch, so merging it lands on their branch, never `main`) only when explicitly requested. Everything it posts is opt-in for the PR owner; it never merges, force-pushes, or edits someone else's PR. Also `disable-model-invocation` — it writes to GitHub, so it runs only when explicitly asked.
 - **`commands/`** — the four slash commands above.
 - **`rules/llm-prose.mdc`** — Cursor-only, globbed to code files, not always-on. Write-time comment discipline.
-- **`skills/comment-bloat-review/scripts/deslop.py`** — a stdlib-only, language-agnostic deterministic pre-pass bundled *inside* the skill, covering only the two mechanical cases: notes-to-self / LLM residue and commented-out code. Bundled because Cursor exposes no plugin-root path or install hook — a script in the skill's own `scripts/` dir is the one mechanism that reliably runs from any repo, with no model and no install. Anything debatable is left to the skill's judgment. Rules and rationale: [RULES.md](skills/comment-bloat-review/scripts/RULES.md). (On Python-only repos, `eradicate` and `pydoclint`/`docsig` are mature deeper checks; deslop's niche is language-agnostic and always-on.)
+- **`skills/comment-bloat-review/scripts/deslop.py`** — a stdlib-only deterministic pre-pass bundled *inside* the skill. It catches high-precision residue, commented-out code, numbered scaffolding, adjacent-code narration, generated files, and PR-body debris while preserving broad language support. Bundling it in the skill keeps it portable without installing hooks or host-project dependencies. Ambiguous prose decisions remain with the rubric. Rules and rationale: [RULES.md](skills/comment-bloat-review/scripts/RULES.md).
 
 ## Portability
 
