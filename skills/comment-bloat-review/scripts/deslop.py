@@ -185,17 +185,31 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
             previous = i - 1
             while previous >= 0 and text[previous].isspace():
                 previous -= 1
-            line_start = text.rfind("\n", 0, i) + 1
-            prefix = text[line_start:i].rstrip()
+            token_start = previous
+            while token_start >= 0 and (
+                text[token_start].isalnum() or text[token_start] in "_$"
+            ):
+                token_start -= 1
+            previous_token = text[token_start + 1:previous + 1]
+            keyword_context = (
+                previous_token in {
+                    "return", "case", "throw", "yield", "await", "else", "do",
+                    "typeof", "void", "delete", "new",
+                }
+                and (token_start < 0 or text[token_start] not in ".$")
+            )
+            control_context = (
+                previous >= 0
+                and text[previous] == ")"
+                and _after_js_control_header(
+                    text[text.rfind("\n", max(0, i - 4096), i) + 1:i]
+                )
+            )
             can_start = (
                 previous < 0
                 or text[previous] in "=(:,[!&|?{};>+-*%^~<"
-                or bool(re.search(
-                    r"(?:^|[^\w.$])(?:return|case|throw|yield|await|else|do|"
-                    r"typeof|void|delete|new)\s*$",
-                    text[:i],
-                ))
-                or _after_js_control_header(prefix)
+                or keyword_context
+                or control_context
             )
             if can_start:
                 start = i
