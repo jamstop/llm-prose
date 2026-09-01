@@ -304,7 +304,8 @@ def _same_word(left: str, right: str) -> bool:
     return longer[len(base):] in _INFLECTIONS
 
 
-def _restates_next_code(cleaned: str, source_lines: list[str], comment_line: int) -> bool:
+def _restates_next_code(cleaned: str, source_lines: list[str],
+                        last_comment_line: int) -> bool:
     if "\n" in cleaned or not _NARRATION_LEAD.match(cleaned) or _NARRATION_RATIONALE.search(cleaned):
         return False
     tokens = _words(cleaned) - _NARRATION_STOPWORDS
@@ -313,13 +314,39 @@ def _restates_next_code(cleaned: str, source_lines: list[str], comment_line: int
         tokens.discard(lead.group())
     if not tokens:
         return False
-    for candidate in source_lines[comment_line:comment_line + 3]:
+    for candidate in source_lines[last_comment_line:last_comment_line + 3]:
         stripped = candidate.strip()
         if not stripped or stripped.startswith(("//", "#", "--", "/*", "*")):
             continue
         words = _words(stripped)
         return any(_same_word(token, word) for token in tokens for word in words)
     return False
+
+
+def _fenced_line_comment_lines(comments: list[Comment], source_lines: list[str],
+                               profile: dict) -> set[int]:
+    """Physical lines inside consecutive line-comment Markdown fences."""
+    fenced: set[int] = set()
+    in_fence = False
+    previous_line: int | None = None
+    for comment in comments:
+        own_line = source_lines[comment.line - 1].lstrip()
+        marker = next((item for item in profile["line"] if own_line.startswith(item)), None)
+        consecutive = previous_line is not None and comment.line == previous_line + 1
+        if marker is None or "\n" in comment.text or (previous_line is not None and not consecutive):
+            in_fence = False
+        if marker is None or "\n" in comment.text:
+            previous_line = None
+            continue
+        cleaned = comment.text.strip()
+        if marker == "//":
+            cleaned = cleaned.lstrip("/!").lstrip()
+        if cleaned.startswith(("```", "~~~")):
+            in_fence = not in_fence
+        elif in_fence:
+            fenced.add(comment.line)
+        previous_line = comment.line
+    return fenced
 
 
 def _is_residue(text: str) -> bool:
@@ -495,16 +522,23 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
     )
     if _GENERATED_PATH.search(path) or generated_header:
         return []
+    comments = extract_comments(source, profile)
+    fenced_line_comments = _fenced_line_comment_lines(comments, source_lines, profile)
     findings: list[Finding] = []
-    for comment in extract_comments(source, profile):
+    for comment in comments:
         parts = _body_lines(comment)
         code_lines: set[int] = set()
         in_fence = False
         for physical_line, text in parts:
             if text.startswith(("```", "~~~")):
                 in_fence = not in_fence
-            elif not in_fence and _is_commented_code(text, language):
+            elif (
+                not in_fence
+                and physical_line not in fenced_line_comments
+                and _is_commented_code(text, language)
+            ):
                 code_lines.add(physical_line)
+        last_comment_line = comment.line + comment.text.count("\n")
         for physical_line, text in parts:
             if not text:
                 continue
@@ -530,7 +564,7 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
             if (
                 (not enabled or "narration" in enabled)
                 and (not comment.trailing or physical_line > comment.line)
-                and _restates_next_code(text, source_lines, physical_line)
+                and _restates_next_code(text, source_lines, last_comment_line)
             ):
                 findings.append(Finding(
                     path, physical_line, "narration", "tighten",

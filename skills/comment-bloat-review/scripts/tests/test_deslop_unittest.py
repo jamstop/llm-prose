@@ -69,6 +69,21 @@ class PrecisionTests(unittest.TestCase):
         )
         self.assertNotIn("commented-out-code", rules(source))
 
+    def test_fenced_examples_across_line_comments_are_ignored(self):
+        for prefix in ("//", "///"):
+            with self.subTest(prefix=prefix):
+                source = (
+                    f"{prefix} Example:\n{prefix} ```go\n"
+                    f"{prefix} value := load()\n{prefix} ```\nfunc run() {{}}\n"
+                )
+                self.assertNotIn("commented-out-code", rules(source, "go"))
+
+    def test_block_narration_looks_after_the_entire_comment(self):
+        unrelated = "/**\n * Add widget\n */\nlet count = 1\n"
+        self.assertNotIn("narration", rules(unrelated))
+        restatement = "/**\n * Add widget\n */\nwidgets.append(widget)\n"
+        self.assertIn("narration", rules(restatement))
+
     def test_numbered_steps_and_narration_are_deterministic(self):
         self.assertIn("step-scaffold", rules("// Step 1: Download file\ndownload()\n"))
         self.assertNotIn("step-scaffold", rules("// Step 2 of the handshake retries.\nretry()\n"))
