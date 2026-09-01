@@ -388,9 +388,6 @@ _PROSE_SENTENCE = re.compile(
 # it stays caught — the `=` must be glued to the name and a second token must
 # follow a space.
 _USAGE_ENV = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S+\s+\S")
-_MAPPING_PROSE = re.compile(r"=[^=()]*,[^=()]*=")
-
-
 def _py_is_code(fragment: str) -> bool:
     try:
         tree = ast.parse(textwrap.dedent(fragment))
@@ -420,7 +417,8 @@ def _line_is_code(line: str, language: str) -> bool:
     if _CODE_ASSIGN.match(frag):
         parts = _ASSIGN_OP.split(frag, maxsplit=1)
         rhs = parts[1] if len(parts) > 1 else ""
-        return bool(_RHS_CODE_SIGNAL.search(rhs))
+        first_value = rhs.split(",", maxsplit=1)[0]
+        return bool(_RHS_CODE_SIGNAL.search(first_value))
     return False
 
 
@@ -441,8 +439,6 @@ def _is_commented_code(text: str, language: str) -> bool:
             in_fence = not in_fence
             continue
         if in_fence or not stripped or _is_exempt(stripped):
-            continue
-        if _MAPPING_PROSE.search(stripped):
             continue
         if _line_is_code(stripped, language):
             return True
