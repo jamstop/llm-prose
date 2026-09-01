@@ -34,21 +34,42 @@ With no local clone available, skip deslop (the rubric says how) and review on t
 
 If there are no findings, say so to the user and post nothing.
 
-## 2. Deliver as one batched review of inline suggestions
+## 2. Validate and deliver one batched review
 
 This is the default delivery for comment fixes, whatever their count. Native, zero-setup, one-click per fix, and — unlike a new PR — it creates no extra noise in PR feeds and notification channels. Get the repo/head metadata first: `gh pr view <n> --json headRefName,headRepositoryOwner,isCrossRepository,number,url`.
 
-Post a single review (not individual comments). Everything goes in one JSON document — `gh api` **silently ignores `-f` flags when `--input` is used**, so `event` must be inside the JSON or the review is created PENDING (invisible to the owner, and it blocks your later reviews):
+Do not build suggestion fences directly from model output. Save the fresh review's comment findings as JSON under `comment_findings`, with each finding containing `path`, `start_line`, `end_line`, `action`, `replacement`, `rationale`, and `confidence`. Then run the bundled zero-dependency renderer against the exact diff and checked-out PR head:
 
-```
-jq -n '{event: "COMMENT",
-        body: "prose review — apply any of these with \"Commit suggestion\"",
-        comments: [{path: "src/x.py", line: 12, side: "RIGHT",
-                    body: "```suggestion\n<replacement>\n```"}]}' \
-  | gh api repos/{owner}/{repo}/pulls/<n>/reviews --input -
+```bash
+reviewed_head="$(gh pr view <n> --json headRefOid -q .headRefOid)"
+test "$(git -C <checked-out-pr-head> rev-parse HEAD)" = "$reviewed_head"
+python3 scripts/render.py \
+  --result /tmp/prose-findings.json \
+  --diff /tmp/prose.diff \
+  --source-root <checked-out-pr-head> \
+  --commit-id "$reviewed_head" \
+  --output /tmp/prose-review.json
+test "$(gh pr view <n> --json headRefOid -q .headRefOid)" = "$reviewed_head"
+gh api repos/{owner}/{repo}/pulls/<n>/reviews --input /tmp/prose-review.json
 ```
 
-Confirm the response says `"state": "COMMENTED"` — a `"state": "PENDING"` means the review is unsubmitted; submit or delete it (`gh api --method DELETE .../reviews/<id>`). A deletion is an empty suggestion block. A multi-line fix uses `start_line` + `line`. Suggestions can only attach to lines present in the diff — which prose findings always are, since the review scopes to added lines. Line anchors must match the PR head **at post time** — if the branch moved since you reviewed, re-diff and re-anchor before posting (a stale anchor 422s the whole review with "Line could not be resolved").
+`scripts/render.py` is relative to this skill directory. It pins the review to the
+full head SHA and is the apply-able-edit trust boundary: only high-confidence
+edits whose entire range is added, matches the checked-out source, contains
+comment text and no executable text, excludes block delimiters and directives,
+and has a comment-only replacement become suggestion blocks. Inline comments,
+mixed code/comment ranges, complex-literal languages that cannot be proven safe,
+directives, unsafe block ranges, and unsafe replacements become ordinary review
+notes with no replacement text. Malformed or out-of-diff findings are dropped
+individually; one bad finding never aborts the rest. Read its stderr diagnostics
+before posting.
+
+Post the generated document as one review, not individual comments. Everything
+is already inside the JSON document — `gh api` **silently ignores `-f` flags
+when `--input` is used**. Confirm the response says `"state": "COMMENTED"`; a
+`"state": "PENDING"` means the review is unsubmitted, so submit or delete it
+(`gh api --method DELETE .../reviews/<id>`). If either head comparison fails,
+stop and regenerate the checkout, diff, findings, and renderer output.
 
 **Stacked fix PR — only on explicit request.** If the user asks for a stacked PR (e.g. "post as a stacked PR"), apply every fix on a branch and let GitHub's diff viewer be the review:
 

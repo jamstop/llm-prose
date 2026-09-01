@@ -26,12 +26,16 @@ For large diffs, work per file (`--name-only` first, then diff the files that ac
 Apply each rubric to the resolved target, **comments first** — its output feeds the description pass:
 
 - **Comments** — follow the `comment-bloat-review` skill. It begins with a bundled deterministic pre-pass (`deslop`) on the diff, then layers judgment on top.
-- **Description** — follow the `pr-description-review` skill (skip if not a git/PR context). Carry over the comment pass's harvest: rationale it moved out of comments with destination "PR description" is diff-backed Why/How material for the rewrite.
+- **Description** — follow the `pr-description-review` skill (skip if not a git/PR context). Run `deslop.py --body-file` on a saved copy of the body for deterministic debris checks, then apply the description rubric. Carry over rationale moved from comments to the PR description as diff-backed Why/How material.
 
 ## 3. Output
 
 Two clearly separated sections: **Comments** (flagged items grouped by file, with concrete fixes) and **Description** (verdict + ready-to-paste rewrite). Lead each with a one-line verdict. When the user asks, apply the comment edits and update the PR body. Keep the report tight.
 
-The review's write set is comments and the description — nothing else. Run every helper with the system `python3`, never `uv run`/`uv sync` or another environment manager that can regenerate a dependency lockfile as a side effect. If a lockfile shows up modified afterward, restore it.
+The review's write set is comments and the description — nothing else. Run
+every helper with the system `python3`, never `uv run`/`uv sync` or another
+environment manager that can regenerate a dependency lockfile. Never revert an
+unexpected repository change; report it and obtain the user's explicit approval
+before cleanup.
 
-For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command. To leave the review **on the PR itself** — one-click suggestions the owner can apply — follow the `post-prose-review` skill, but only when the user explicitly asks to post.
+For one pass only, use the `/prose-code-comments` or `/prose-pr-description` command. To leave the review **on the PR itself**, follow `post-prose-review`; its renderer, not prose instructions alone, decides which edits are safe one-click suggestions. Only post when the user explicitly asks. Host-project hooks are optional integrations and are never installed by this skill.
