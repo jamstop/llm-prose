@@ -33,32 +33,56 @@ Targeting is automatic: with no argument it reviews the current branch (or its o
 
 ## Install
 
-Install it **once through Claude Code's marketplace.** Cursor (both the IDE and the `cursor-agent` CLI) reads `~/.claude/plugins`, so a single Claude install makes the plugin available in **Claude Code, Cursor IDE, and Cursor CLI** — no per-tool setup, no `--plugin-dir`.
+Install it separately in each client where you want to use it.
+
+**Claude Code marketplace:**
 
 ```bash
 claude plugin marketplace add jamstop/llm-prose   # private repo OK (uses your git auth)
 claude plugin install llm-prose@llm-prose
 ```
 
-Restart/reload each tool once to pick it up.
+Update with `claude plugin update llm-prose@llm-prose`, or enable that
+marketplace's `autoUpdate` setting.
 
-**Updating — it's tool-specific.** `"autoUpdate": true` (in `~/.claude/plugins/known_marketplaces.json`) is honored **only by Claude Code**, on launch. **Cursor does not auto-update** — it loads whatever version is pinned in `~/.claude/plugins/installed_plugins.json` and never checks the remote itself. So:
+### Cursor
 
-- **Claude Code:** with `autoUpdate` on, a new session pulls the latest. Or force it: `claude plugin update llm-prose@llm-prose`.
-- **Cursor (IDE or CLI):** run `claude plugin update llm-prose@llm-prose` explicitly, **then restart Cursor**. (Want hands-off? Run that command from a login hook or alias — Cursor won't do it for you.)
+Cursor may import plugins already installed through Claude Code when **Include
+third-party Plugins, Skills, and other configs** is enabled. This is a
+compatibility feature; Cursor does not document Claude Code's plugin storage
+format as a stable Cursor installation interface.
 
-> Why this and not a Cursor marketplace: Cursor's own marketplace is public-repo + manual review, and Team Marketplaces are Teams/Enterprise + org-scoped. The Claude plugin layer is the practical cross-tool path for a private repo.
-
-### Ad-hoc / dev, without installing
-
-`cursor-agent` can load the plugin straight from a checkout:
+For a Cursor-native local installation, clone the repository and link its plugin
+root:
 
 ```bash
-cursor-agent --plugin-dir /path/to/llm-prose \
-  -p "use the comment-bloat-review skill to review the comments on this branch"
+git clone <repository-url> ~/.local/share/llm-prose
+mkdir -p ~/.cursor/plugins/local
+ln -s ~/.local/share/llm-prose ~/.cursor/plugins/local/llm-prose
 ```
 
-Or copy `skills/`, `commands/`, `rules/` into a project's `.cursor/` (or `.claude/`) dirs — keep skills alongside commands, since commands delegate to skills by name.
+Restart Cursor or run **Developer: Reload Window**. Update by pulling the clone
+and reloading Cursor:
+
+```bash
+git -C ~/.local/share/llm-prose pull
+```
+
+For an ad-hoc Cursor CLI session:
+
+```bash
+agent --plugin-dir ~/.local/share/llm-prose
+```
+
+`--plugin-dir` can be supplied more than once. Teams and Enterprise
+administrators can import a private repository through **Dashboard → Plugins →
+Add Marketplace → Import from Repo**; developers then install it from
+**Customize**. Public plugins can instead be submitted to Cursor's reviewed
+Marketplace. Administrators may disable local plugin imports.
+
+For clients without plugin installation, copy `skills/`, `commands/`, and
+`rules/` into the project's supported configuration directory. Keep skills
+alongside commands because commands delegate to skills by name.
 
 ## Contributing & releasing
 

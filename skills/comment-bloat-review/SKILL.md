@@ -47,14 +47,14 @@ report it and obtain the user's explicit approval before cleanup.
 - **Misplaced** — one large block where focused notes at the tricky spots would serve better. **Move**, don't delete: place each surviving fact at the line it describes and drop the connective tissue.
 - **Design-doc density** — the trap the other patterns miss: a comment that is *correct and informative* but oversized for the code it annotates. Tells include chained rationale, cross-references, and narrative better suited to durable docs or the PR. **Keep the local constraint concise and move the broader rationale** to the PR description, commit message, or docs. There is no universal line limit: API docs, safety contracts, and protocol invariants may need more room. If the survivor only restates the symbol or adjacent declaration, delete it.
 
-  ```swift
-  // Before — every clause true, none of it earning its place here:
-  /// Re-hydrates stored clips with their joined creator identity. Creator
-  /// Profiles are the only join — one batch query for the whole set, not
-  /// one per clip. Every other collection is already a column on the clip row.
+  ```python
+  # Before — every clause true, none of it earning its place here:
+  # Attaches region metadata to imported records. Regions are the only joined
+  # table, so one batch query serves the whole set instead of one lookup per
+  # record. All other fields are stored directly on each record.
 
-  // After — one direct line about what the reader needs at this callsite:
-  /// Loads all creator profiles in one batch query — no per-clip lookups.
+  # After — one direct line about what the reader needs at this callsite:
+  # Loads region metadata in one batch to avoid per-record lookups.
   ```
 
 ## 3. Keep comments that earn their place

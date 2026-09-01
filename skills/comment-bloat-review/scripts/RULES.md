@@ -80,7 +80,7 @@ line, which avoids anchoring a finding to unrelated code.
 
 Files with a generated marker in their first five lines, or an exact
 `Generated/` path segment, are skipped because edits belong in the generator.
-Names such as `GeneratedManually/` remain in scope.
+Names such as `GeneratedByHand/` remain in scope.
 
 ### PR-description checks
 
