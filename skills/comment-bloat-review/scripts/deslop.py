@@ -39,7 +39,10 @@ _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 # as a string opener would swallow a trailing `//` comment on the same line.
 
 # JS/TS: `'`, `"`, and backtick are all real string delimiters.
-_JS = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "'", "`"]}
+_JS = {
+    "line": ["//"], "block": [("/*", "*/")], "strings": ['"', "'", "`"],
+    "regex": True,
+}
 # Rust/Go/C/C++/Java/Kotlin/Scala: `"`/backtick are strings; `'` is a char/rune
 # literal, validated by pattern so a bare lifetime tick is left as ordinary text.
 _CHARLIT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "`"], "char": "'"}
@@ -118,6 +121,21 @@ def _read_source(path: str | Path) -> str:
         raise OSError(f"{target} is not UTF-8 text") from error
 
 
+def _after_js_control_header(prefix: str) -> bool:
+    match = re.match(r"^\s*(?:if|while|for|with)\s*\(", prefix)
+    if not match:
+        return False
+    depth = 1
+    for index in range(match.end(), len(prefix)):
+        if prefix[index] == "(":
+            depth += 1
+        elif prefix[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return not prefix[index + 1:].strip()
+    return False
+
+
 # --- comment extraction ------------------------------------------------------
 # A small character scanner that walks the source once, skipping string and
 # triple-quoted literals so comment markers inside them don't fire. Returns
@@ -163,6 +181,61 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
                     i += 1
                 i += len(closing)
                 continue
+        if profile.get("regex") and ch == "/" and not text.startswith(("//", "/*"), i):
+            previous = i - 1
+            while previous >= 0 and text[previous].isspace():
+                previous -= 1
+            token_start = previous
+            while token_start >= 0 and (
+                text[token_start].isalnum() or text[token_start] in "_$"
+            ):
+                token_start -= 1
+            previous_token = text[token_start + 1:previous + 1]
+            keyword_context = (
+                previous_token in {
+                    "return", "case", "throw", "yield", "await", "else", "do",
+                    "typeof", "void", "delete", "new",
+                }
+                and (token_start < 0 or text[token_start] not in ".$")
+            )
+            control_context = False
+            if previous >= 0 and text[previous] == ")":
+                control_start = max(0, i - 4096)
+                newline = text.rfind("\n", control_start, i)
+                if newline >= 0:
+                    control_start = newline + 1
+                control_context = _after_js_control_header(text[control_start:i])
+            can_start = (
+                previous < 0
+                or text[previous] in "=(:,[!&|?{};>+-*%^~<"
+                or keyword_context
+                or control_context
+            )
+            if can_start:
+                start = i
+                i += 1
+                in_class = False
+                while i < n and text[i] != "\n":
+                    if text[i] == "\\":
+                        if i + 1 >= n or text[i + 1] == "\n":
+                            i = start + 1
+                            break
+                        i += 2
+                        continue
+                    if text[i] == "[":
+                        in_class = True
+                    elif text[i] == "]":
+                        in_class = False
+                    elif text[i] == "/" and not in_class:
+                        i += 1
+                        while i < n and text[i].isalpha():
+                            i += 1
+                        break
+                    i += 1
+                else:
+                    i = start + 1
+                if i != start + 1:
+                    continue
         triple = startswith_any(triples)
         if triple:
             i += len(triple)
@@ -250,7 +323,9 @@ _RESIDUE = re.compile(
   | \bper\ review\b
   | \bnote:\ I\b
   | \bas\ a\ reminder\b
-  | \bas\ discussed\b(?!\s+in\b)
+  | \bas\ discussed\b
+    (?!\s+in\s+(?:https?://|\[[^\]]+\]\([^)]+\)|(?:issue\s+)?\#\d+\b
+      |[A-Z][A-Z0-9]+-\d+\b|[\w.-]+/[\w./-]*(?:\#\d+|\.md)\b))
   | \bper\ (?:our|the)\ (?:conversation|discussion|chat)\b
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -304,7 +379,8 @@ def _same_word(left: str, right: str) -> bool:
     return longer[len(base):] in _INFLECTIONS
 
 
-def _restates_next_code(cleaned: str, source_lines: list[str], comment_line: int) -> bool:
+def _restates_next_code(cleaned: str, source_lines: list[str],
+                        last_comment_line: int) -> bool:
     if "\n" in cleaned or not _NARRATION_LEAD.match(cleaned) or _NARRATION_RATIONALE.search(cleaned):
         return False
     tokens = _words(cleaned) - _NARRATION_STOPWORDS
@@ -313,13 +389,57 @@ def _restates_next_code(cleaned: str, source_lines: list[str], comment_line: int
         tokens.discard(lead.group())
     if not tokens:
         return False
-    for candidate in source_lines[comment_line:comment_line + 3]:
+    for candidate in source_lines[last_comment_line:last_comment_line + 3]:
         stripped = candidate.strip()
         if not stripped or stripped.startswith(("//", "#", "--", "/*", "*")):
             continue
         words = _words(stripped)
         return any(_same_word(token, word) for token in tokens for word in words)
     return False
+
+
+_FENCE_MARKER = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _advance_fence(line: str, opened: tuple[str, int] | None
+                   ) -> tuple[tuple[str, int] | None, bool]:
+    match = _FENCE_MARKER.match(line)
+    if not match:
+        return opened, False
+    marker, suffix = match.groups()
+    candidate = (marker[0], len(marker))
+    if opened is None:
+        return candidate, True
+    if candidate[0] == opened[0] and candidate[1] >= opened[1] and not suffix.strip():
+        return None, True
+    return opened, False
+
+
+def _fenced_line_comment_lines(comments: list[Comment], source_lines: list[str],
+                               profile: dict) -> set[int]:
+    """Physical lines inside consecutive line-comment Markdown fences."""
+    fenced: set[int] = set()
+    opened: tuple[str, int] | None = None
+    previous_line: int | None = None
+    for comment in comments:
+        own_line = source_lines[comment.line - 1].lstrip()
+        marker = next((item for item in profile["line"] if own_line.startswith(item)), None)
+        consecutive = previous_line is not None and comment.line == previous_line + 1
+        if marker is None or "\n" in comment.text or (previous_line is not None and not consecutive):
+            opened = None
+        if marker is None or "\n" in comment.text:
+            previous_line = None
+            continue
+        cleaned = comment.text.rstrip()
+        if marker == "//":
+            cleaned = cleaned.lstrip("/!")
+        if cleaned.startswith(" "):
+            cleaned = cleaned[1:]
+        opened, delimiter = _advance_fence(cleaned, opened)
+        if opened is not None and not delimiter:
+            fenced.add(comment.line)
+        previous_line = comment.line
+    return fenced
 
 
 def _is_residue(text: str) -> bool:
@@ -432,13 +552,13 @@ def _is_commented_code(text: str, language: str) -> bool:
     cleaned = _clean(text)
     if not cleaned or _is_exempt(cleaned):
         return False
-    in_fence = False
+    opened: tuple[str, int] | None = None
     for line in cleaned.splitlines():
         stripped = line.strip()
-        if stripped.startswith("```"):
-            in_fence = not in_fence
+        opened, delimiter = _advance_fence(stripped, opened)
+        if delimiter:
             continue
-        if in_fence or not stripped or _is_exempt(stripped):
+        if opened is not None or not stripped or _is_exempt(stripped):
             continue
         if _line_is_code(stripped, language):
             return True
@@ -468,8 +588,33 @@ _RULES = {
                            "comment body reads as code; delete (it's in git history)"),
 }
 
-_GENERATED = re.compile(r"Code generated|DO NOT EDIT|@generated|Generated by", re.IGNORECASE)
+_GENERATED = re.compile(
+    r"^(?:Code generated\b.*\bDO NOT EDIT\b|DO NOT EDIT\b|@generated\b|Generated by\b)",
+    re.IGNORECASE,
+)
 _GENERATED_PATH = re.compile(r"(?:^|/)Generated/")
+
+
+def _has_generated_header(source_lines: list[str], comments: list[Comment]) -> bool:
+    comment_lines = {
+        line
+        for comment in comments
+        for line in range(comment.line, comment.line + comment.text.count("\n") + 1)
+    }
+    line = 1
+    while line <= len(source_lines) and not source_lines[line - 1].strip():
+        line += 1
+    if line <= len(source_lines) and source_lines[line - 1].startswith("#!"):
+        line += 1
+    while line <= len(source_lines):
+        if not source_lines[line - 1].strip() or line in comment_lines:
+            line += 1
+            continue
+        break
+    return any(
+        comment.line < line and _GENERATED.search(_clean(comment.text))
+        for comment in comments
+    )
 
 
 def _body_lines(comment: Comment) -> list[tuple[int, str]]:
@@ -483,30 +628,43 @@ def _body_lines(comment: Comment) -> list[tuple[int, str]]:
             for offset, text in enumerate(lines)]
 
 
+def _markdown_body_lines(text: str) -> list[str]:
+    lines = text.splitlines() or [text]
+    return [re.sub(r"^\s*\* ?", "", line.rstrip()) for line in lines]
+
+
 def lint_source(path: str, source: str, language: str, enabled=None) -> list[Finding]:
     profile = _PROFILES.get(language)
     if profile is None:
         return []
     source_lines = source.splitlines()
     header = "\n".join(source_lines[:5])
-    generated_header = any(
-        _GENERATED.search(comment.text)
-        for comment in extract_comments(header, profile)
+    generated_header = _has_generated_header(
+        source_lines[:5],
+        extract_comments(header, profile),
     )
     if _GENERATED_PATH.search(path) or generated_header:
         return []
+    comments = extract_comments(source, profile)
+    fenced_lines = _fenced_line_comment_lines(comments, source_lines, profile)
     findings: list[Finding] = []
-    for comment in extract_comments(source, profile):
+    for comment in comments:
         parts = _body_lines(comment)
         code_lines: set[int] = set()
-        in_fence = False
-        for physical_line, text in parts:
-            if text.startswith(("```", "~~~")):
-                in_fence = not in_fence
-            elif not in_fence and _is_commented_code(text, language):
+        opened: tuple[str, int] | None = None
+        for (physical_line, text), markdown_line in zip(
+            parts,
+            _markdown_body_lines(comment.text),
+        ):
+            opened, delimiter = _advance_fence(markdown_line, opened)
+            if opened is not None and not delimiter:
+                fenced_lines.add(physical_line)
+            elif not delimiter and physical_line not in fenced_lines \
+                    and _is_commented_code(text, language):
                 code_lines.add(physical_line)
+        last_comment_line = comment.line + comment.text.count("\n")
         for physical_line, text in parts:
-            if not text:
+            if not text or physical_line in fenced_lines:
                 continue
             if (not enabled or "notes-to-self" in enabled) and _is_residue(text):
                 findings.append(Finding(
@@ -530,7 +688,7 @@ def lint_source(path: str, source: str, language: str, enabled=None) -> list[Fin
             if (
                 (not enabled or "narration" in enabled)
                 and (not comment.trailing or physical_line > comment.line)
-                and _restates_next_code(text, source_lines, physical_line)
+                and _restates_next_code(text, source_lines, last_comment_line)
             ):
                 findings.append(Finding(
                     path, physical_line, "narration", "tighten",
@@ -573,12 +731,10 @@ def lint_body(body: str, enabled=None) -> list[Finding]:
     boxes: list[tuple[int, str]] = []
     lines = body.splitlines()
     fenced: set[int] = set()
-    in_fence = False
+    opened: tuple[str, int] | None = None
     for index, line in enumerate(lines, 1):
-        if line.lstrip().startswith(("```", "~~~")):
-            in_fence = not in_fence
-            fenced.add(index)
-        elif in_fence:
+        opened, delimiter = _advance_fence(line, opened)
+        if delimiter or opened is not None:
             fenced.add(index)
 
     headings = [
