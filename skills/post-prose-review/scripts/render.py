@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import re
 import subprocess
 import sys
+import tokenize
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -26,14 +29,20 @@ _DIRECTIVE = re.compile(
     r"//extern\b|//export\b|//\s*#cgo\b|#cgo\b|"
     r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@|"
     r"//\s*(?:swift-tools-version:|swift-format-(?:ignore|ignore-file)\b|"
-    r"swiftformat:|swiftlint:|eslint-(?:disable|enable)(?:-next-line|-line)?\b|"
+    r"swiftformat:|swiftlint:|sourcery:|periphery:|"
+    r"eslint-(?:disable|enable)(?:-next-line|-line)?\b|eslint-env\b|"
     r"biome-ignore(?:-all)?\b|prettier-ignore\b|istanbul\s+ignore\b|@ts-|"
-    r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|@flow\b)|"
-    r"#\s*(?:noqa\b|flake8:|pyright:|pylint:|mypy:|ruff:|fmt:|isort:|"
-    r"cython:|distutils:|"
+    r"c8\s+ignore\b|v8\s+ignore\b|tslint:|deno-lint-ignore\b|oxlint-|"
+    r"@refresh\b|@generated\b|NOSONAR\b|codeql\[|lgtm\b|"
+    r"ktlint-(?:disable|enable)\b|@formatter:|\$COVERAGE-IGNORE\$|"
+    r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|@flow\b|"
+    r"lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:|sys\b)|"
+    r"#\s*(?:noqa\b|flake8:|pyright:|pyre-|pylint:|mypy:|ruff:|fmt:|yapf:|isort:|"
+    r"cython:|distutils:|nosec\b|nosemgrep\b|skipcq\b|codespell:|sourcery\s+skip\b|"
+    r"keep$|gazelle:|buildifier:|buildozer:|"
     r"pragma:|shellcheck\b|yamllint\b)|"
     r"/\*\s*(?:eslint-(?:disable|enable)|biome-ignore|prettier-ignore|"
-    r"istanbul\s+ignore)\b)",
+    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore)\b)",
     re.IGNORECASE,
 )
 
@@ -43,17 +52,23 @@ _DIRECTIVE = re.compile(
 # a suggestion validated against one line would replace a different one),
 # plus the surrogates that surrogateescape uses for undecodable bytes.
 _UNSAFE_TEXT = re.compile("[\r\v\f\x1c-\x1e\x85\u2028\u2029\udc80-\udcff]")
-# Zero-width and bidi controls make a suggestion render differently from
-# what it applies. No comment rewrite needs them.
-_INVISIBLE_CONTROLS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 _DOCTEST_PROMPT = re.compile(r"^\s*(?:>>>|\.\.\.)(?:\s|$)")
-# Sphinx directives that read files or run code when the docs build.
-_RST_ACTIVE_DIRECTIVE = re.compile(
-    r"^\s*\.\.\s+(?:include|literalinclude|raw|exec|jupyter-execute|plot|"
-    r"doctest|testcode|testsetup|testcleanup|testoutput)::",
-    re.IGNORECASE,
-)
+# Any reST directive. Several read files or run code when the docs build
+# (include, raw, ifconfig, testcode, csv-table :file:), and docutils allows
+# a space before the `::`, so a denylist would be both incomplete and
+# bypassable. A prose rewrite never needs to add one.
+_RST_DIRECTIVE = re.compile(r"^\s*\.\.\s+[\w.:+-]+\s*::")
 _DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _has_hidden_characters(text: str) -> bool:
+    """Format, control, private-use, and unassigned code points make a
+    suggestion render differently from what it applies (bidi overrides,
+    zero-width joiners, Unicode tags). No comment rewrite needs them."""
+    return any(
+        char not in "\t\n" and unicodedata.category(char) in {"Cf", "Cc", "Co", "Cn", "Cs"}
+        for char in text
+    )
 
 
 def _split_lines(text: str) -> list[str]:
@@ -101,109 +116,221 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
     return result
 
 
-_SLASH_COMMENT_SUFFIXES = frozenset({
-    ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".swift", ".go", ".kt", ".kts", ".scala",
+# Which `//`-comment languages the scanner understands. `quotes` take
+# backslash escapes; `raw` literals run to their closing delimiter with none
+# (Go backticks; Kotlin and Scala `"""` and backtick identifiers). Anything
+# not listed fails closed: some suffixes need a real parser (heredocs, YAML
+# block scalars, Groovy slashy strings); some have no comment syntax at all
+# (Markdown, JSON), so "comment-only" would prove nothing and a one-click edit
+# into agent-instruction Markdown or workflow YAML is a privileged write.
+_JS_PROFILE = {"quotes": ("`", '"', "'"), "raw": (), "nested": False, "regex": True}
+_KOTLIN_PROFILE = {"quotes": ('"', "'"), "raw": ('"""', "`"), "nested": True, "regex": False}
+_SLASH_PROFILES = {
+    ".js": _JS_PROFILE, ".jsx": _JS_PROFILE, ".mjs": _JS_PROFILE, ".cjs": _JS_PROFILE,
+    ".ts": _JS_PROFILE, ".tsx": _JS_PROFILE,
+    ".kt": _KOTLIN_PROFILE, ".kts": _KOTLIN_PROFILE, ".scala": _KOTLIN_PROFILE,
+    ".swift": {"quotes": ('"""', '"'), "raw": (), "nested": True, "regex": False},
+    ".go": {"quotes": ('"', "'"), "raw": ("`",), "nested": False, "regex": False},
+    # Apple localization tables: C-style comments around `"key" = "value";`.
+    ".strings": {"quotes": ('"',), "raw": (), "nested": False, "regex": False},
+    # GLSL has no string literals at all.
+    ".glsl": {"quotes": (), "raw": (), "nested": False, "regex": False},
+}
+# Starlark (.bzl/.bazel) is a Python subset; the Python tokenizer reads it.
+_PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".bzl", ".bazel"})
+_JS_REGEX_KEYWORDS = frozenset({
+    "return", "case", "throw", "yield", "await", "else", "do", "typeof",
+    "void", "delete", "new", "in", "of", "instanceof",
 })
-_NESTED_BLOCK_SUFFIXES = frozenset({".swift", ".kt", ".kts", ".scala"})
-
-
-def _profile(path: str) -> tuple[str | None, bool, bool, tuple[str, ...]]:
-    suffix = Path(path).suffix.lower()
-    if suffix in {".py", ".pyi"}:
-        return "#", False, False, ('"""', "'''", '"', "'")
-    if suffix in _SLASH_COMMENT_SUFFIXES:
-        return "//", True, suffix in _NESTED_BLOCK_SUFFIXES, ('"""', "'''", "`", '"', "'")
-    # Fail closed for every other suffix. Some need a real parser (heredocs,
-    # YAML block scalars, Groovy slashy strings); some have no comment syntax
-    # at all (Markdown, JSON), so "comment-only" would prove nothing and a
-    # one-click edit into agent-instruction Markdown or workflow YAML is a
-    # privileged write. Findings remain useful, but never become one-click edits.
-    return None, False, False, ()
 
 
 def comment_only_lines(source: str, path: str) -> set[int]:
-    """Return lines containing comments and no executable or literal text."""
-    marker, blocks, nested, quotes = _profile(path)
-    if marker is None:
+    """Return lines whose non-whitespace content is entirely comment text."""
+    suffix = Path(path).suffix.lower()
+    if suffix in _PYTHON_SUFFIXES:
+        return _python_comment_only_lines(source)
+    profile = _SLASH_PROFILES.get(suffix)
+    if profile is None:
         return set()
+    return _slash_comment_only_lines(source, suffix, profile)
+
+
+def _python_comment_only_lines(source: str) -> set[int]:
+    # The stdlib tokenizer is exact where a hand scanner is not: nested
+    # f-string quotes, escapes, continuations. Any tokenizer error fails closed.
+    commented: set[int] = set()
+    coded: set[int] = set()
+    inert = {
+        tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
+        tokenize.ENDMARKER, tokenize.ENCODING,
+    }
+    # The 3.12+ tokenizer refuses the surrogates surrogateescape produces for
+    # undecodable bytes. Lines carrying them are rejected as targets anyway;
+    # a placeholder keeps the rest of the file provable.
+    source = source.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type == tokenize.ERRORTOKEN:
+                # Older tokenizers report an unterminated string this way
+                # instead of raising; either way the file cannot be proven.
+                return set()
+            if token.type == tokenize.COMMENT:
+                commented.add(token.start[0])
+            elif token.type not in inert:
+                coded.update(range(token.start[0], token.end[0] + 1))
+    except (tokenize.TokenError, SyntaxError, ValueError):
+        return set()
+    return commented - coded
+
+
+def _js_regex_end(source: str, index: int) -> int | None:
+    """End index of a regex literal starting at `index`, or None if the
+    slash cannot be one (no closing slash on the line)."""
+    position = index + 1
+    in_class = False
+    while position < len(source) and source[position] != "\n":
+        char = source[position]
+        if char == "\\":
+            position += 2
+            continue
+        if char == "[":
+            in_class = True
+        elif char == "]":
+            in_class = False
+        elif char == "/" and not in_class:
+            position += 1
+            while position < len(source) and (source[position].isalnum() or source[position] == "_"):
+                position += 1
+            return position
+        position += 1
+    return None
+
+
+def _js_regex_context(source: str, index: int) -> str:
+    """'yes' if a slash at `index` must start a regex, 'no' if it must be
+    division, 'maybe' after `)` where only a parser could tell."""
+    position = index - 1
+    while position >= 0 and source[position] in " \t":
+        position -= 1
+    if position < 0 or source[position] in "\n=(:,[!&|?{};>+-*%^~<":
+        return "yes"
+    if source[position] == ")":
+        return "maybe"
+    match = re.search(r"[A-Za-z_$][\w$]*$", source[:position + 1])
+    if match and match.group(0) in _JS_REGEX_KEYWORDS and not (
+        match.start() > 0 and source[match.start() - 1] in ".$"
+    ):
+        return "yes"
+    return "no"
+
+
+def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[int]:
     result: set[int] = set()
     line = 1
     index = 0
     quote: str | None = None
+    quote_is_raw = False
     escaped = False
-    depth = 0
-    block_start = 0
-    has_code = False
-    has_comment = False
-    suffix = Path(path).suffix.lower()
+    block_depth = 0
+    block_start_line = 0
+    line_has_code = False
+    line_has_comment = False
     while index < len(source):
-        if source[index] == "\n":
-            if has_comment and not has_code:
+        char = source[index]
+        if char == "\n":
+            if line_has_comment and not line_has_code:
                 result.add(line)
             line += 1
-            has_code = quote is not None
-            has_comment = depth > 0
+            line_has_code = quote is not None
+            line_has_comment = block_depth > 0
             escaped = False
             index += 1
             continue
-        if depth:
-            has_comment = True
-            if nested and source.startswith("/*", index):
-                depth += 1
+        if block_depth:
+            line_has_comment = True
+            if profile["nested"] and source.startswith("/*", index):
+                block_depth += 1
                 index += 2
             elif source.startswith("*/", index):
-                depth -= 1
+                block_depth -= 1
                 index += 2
             else:
                 index += 1
             continue
         if quote:
-            has_code = True
+            line_has_code = True
             if escaped:
                 escaped = False
                 index += 1
-            elif source[index] == "\\":
+            elif char == "\\" and not quote_is_raw:
                 escaped = True
                 index += 1
             elif source.startswith(quote, index):
                 index += len(quote)
+                if quote_is_raw and len(quote) > 1 and quote[0] == '"':
+                    # Kotlin and Scala close at the last three quotes of a
+                    # run, so `"""a""""` holds `a"`.
+                    while index < len(source) and source[index] == '"':
+                        index += 1
                 quote = None
             else:
                 index += 1
             continue
-        if source[index].isspace():
+        if char.isspace():
             index += 1
             continue
-        if marker and source.startswith(marker, index):
-            has_comment = True
+        if source.startswith("//", index):
+            line_has_comment = True
             newline = source.find("\n", index)
             index = len(source) if newline == -1 else newline
             continue
-        if blocks and source.startswith("/*", index):
-            has_comment = True
-            depth = 1
-            block_start = line
+        if source.startswith("/*", index):
+            line_has_comment = True
+            block_depth = 1
+            block_start_line = line
             index += 2
             continue
-        if suffix == ".swift" and source[index] == "#":
-            match = re.match(r'(#+)("""|"|/)', source[index:])
-            if match:
-                has_code = True
-                quote = match.group(2) + match.group(1)
-                index += len(match.group(0))
+        if profile["regex"] and char == "/":
+            end = _js_regex_end(source, index)
+            context = _js_regex_context(source, index)
+            if end is not None and context == "maybe":
+                body = source[index:end]
+                if any(marker in body for marker in ('"', "'", "`", "/*")):
+                    # Division and regex readings leave different quote
+                    # state, and only a parser could pick one. Fail closed.
+                    return set()
+            if end is not None and context != "no":
+                line_has_code = True
+                index = end
                 continue
-        matched = next((item for item in quotes if source.startswith(item, index)), None)
+        if suffix == ".swift" and char == "#":
+            # Extended delimiters: `#"..."#`, `#"""..."""#`, `#/.../#`.
+            # Backslashes are literal unless followed by the same `#` run.
+            raw_quote = re.match(r'(#+)("""|"|/)', source[index:])
+            if raw_quote:
+                line_has_code = True
+                quote = raw_quote.group(2) + raw_quote.group(1)
+                quote_is_raw = True
+                index += len(raw_quote.group(0))
+                continue
+        matched = next((item for item in profile["raw"] if source.startswith(item, index)), None)
         if matched:
-            has_code = True
-            quote = matched
+            line_has_code = True
+            quote, quote_is_raw = matched, True
             index += len(matched)
             continue
-        has_code = True
+        matched = next((item for item in profile["quotes"] if source.startswith(item, index)), None)
+        if matched:
+            line_has_code = True
+            quote, quote_is_raw = matched, False
+            index += len(matched)
+            continue
+        line_has_code = True
         index += 1
-    if has_comment and not has_code and not depth:
+    if line_has_comment and not line_has_code and not block_depth:
         result.add(line)
-    if depth:
-        result.difference_update(range(block_start, line + 1))
+    if block_depth:
+        result.difference_update(range(block_start_line, line + 1))
     return result
 
 
@@ -272,10 +399,16 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
     # or inlines the active directives.
     if any(
         _DOCTEST_PROMPT.match(line)
-        or _RST_ACTIVE_DIRECTIVE.match(line)
+        or _RST_DIRECTIVE.match(line)
         or _DIRECTIVE.match(line.strip())
         for line in replacement_lines
     ):
+        return False
+    if start <= 2 and len(replacement_lines) != end - start + 1 and any(
+        _DIRECTIVE.match(text.strip()) for text in lines[:3]
+    ):
+        # Growing or shrinking a docstring at the top of the file moves the
+        # lines below it, and a coding cookie is only live on lines 1-2.
         return False
     spliced = "\n".join(lines[: start - 1] + replacement_lines + lines[end:])
     if source.endswith("\n"):
@@ -286,10 +419,17 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
         return False
     if replacement:
         new_end = start + len(replacement_lines) - 1
-        if not any(
-            node.body[0].lineno == start and node.body[0].end_lineno == new_end
-            for node in _docstring_owners(new_tree)
-        ):
+        new_target = next(
+            (
+                node.body[0] for node in _docstring_owners(new_tree)
+                if node.body[0].lineno == start and node.body[0].end_lineno == new_end
+            ),
+            None,
+        )
+        if new_target is None:
+            return False
+        if replacement_lines[-1].encode()[new_target.end_col_offset:].strip():
+            # A trailing `# type: ignore` or `# noqa` is not in the AST.
             return False
     else:
         owner.body.pop(0)
@@ -339,6 +479,11 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
         return "drop", None
     if path not in changed or any(line not in changed[path] for line in range(start, end + 1)):
         return "drop", None
+    # The suggestion body wraps the replacement in its own newlines; a trailing
+    # one would apply as an extra blank line the checks never saw.
+    replacement = replacement.rstrip("\n")
+    if action != "delete" and not replacement:
+        return "drop", None
     finding = {"path": path, "start_line": start, "end_line": end, "replacement": replacement, "rationale": rationale}
     if confidence != "high-confidence":
         return "borderline", finding
@@ -361,7 +506,7 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
     if (
         any(_has_unsafe_text(line) for line in target_lines)
         or _has_unsafe_text(replacement)
-        or _INVISIBLE_CONTROLS.search(replacement)
+        or _has_hidden_characters(replacement)
     ):
         return "note", finding
     safe_lines = comment_only_lines(source, path)

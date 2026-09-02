@@ -59,11 +59,13 @@ edits whose entire range is added, matches the checked-out source, contains
 comment text and no executable text, excludes block delimiters and directives,
 and has a comment-only replacement become suggestion blocks. A Python docstring
 also qualifies when the AST proves the range is exactly one docstring and the
-replacement changes nothing but its text. Inline comments, mixed code/comment
-ranges, file types outside the known comment grammars (Markdown, JSON, YAML,
-Groovy, and anything else unlisted), directives, unsafe block ranges, lines with
-non-`\n` line breaks, and unsafe replacements become ordinary review notes with
-no replacement text. Malformed or out-of-diff findings are dropped
+replacement changes nothing but its text, adds no doctest prompt or reST
+directive, and puts nothing after the closing quotes. Inline comments, mixed
+code/comment ranges, file types outside the known comment grammars (Markdown,
+JSON, YAML, Groovy, and anything else unlisted), directives, unsafe block
+ranges, lines with non-`\n` line breaks, replacements carrying hidden or
+control characters, and anything in a file the scanner cannot lex with
+certainty become ordinary review notes with no replacement text. Malformed or out-of-diff findings are dropped
 individually; one bad finding never aborts the rest. Read its stderr diagnostics
 before posting.
 

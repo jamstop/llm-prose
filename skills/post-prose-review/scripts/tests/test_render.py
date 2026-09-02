@@ -295,11 +295,105 @@ class RenderTests(unittest.TestCase):
         self.assertIn("```suggestion", bodies[0])
         self.assertNotIn("```suggestion", bodies[1])
 
-    def test_replacement_cannot_carry_invisible_controls(self):
-        for control in ("\u202e", "\u200b", "\u2066", "\ufeff", "\u2060"):
+    def test_replacement_cannot_carry_hidden_characters(self):
+        # bidi overrides, zero-width, BOM, Arabic letter mark, a Unicode tag
+        # (ASCII smuggling), C0/C1 controls, private use, unassigned.
+        for control in (
+            "\u202e", "\u200b", "\u2066", "\ufeff", "\u2060", "\u061c",
+            "\U000E0041", "\x1b", "\x7f", "\x9f", "\U000F0000", "\U000E0080",
+        ):
             with self.subTest(control=repr(control)):
                 review, _ = self.run_render([finding(replacement=f"// useful{control} reason")])
                 self.assertNotIn("```suggestion", review["comments"][0]["body"])
+        review, _ = self.run_render([finding(replacement="// raison utile — c'est important")])
+        self.assertIn("```suggestion", review["comments"][0]["body"])
+
+    def test_replacement_trailing_newline_is_not_an_extra_blank_line(self):
+        review, _ = self.run_render([finding(replacement="// useful reason\n")])
+        self.assertTrue(review["comments"][0]["body"].endswith("```suggestion\n// useful reason\n```"))
+
+    def test_string_literal_content_is_never_comment_only(self):
+        # Regression: escape processing inside raw literals, first-three-quote
+        # closing for Kotlin, and unknown JS regexes each flipped quote state so
+        # the next string's body scanned as code and its `//` line became a
+        # one-click target.
+        cases = (
+            ("a.go", "var a = `C:\\`\nvar b = `\n// inside raw string b\n`\n// real\n", 5),
+            ("a.kt", 'val a = """C:\\"""\nval b = """\n// inside raw string b\n"""\n// real\n', 5),
+            ("a.kt", 'val a = """say "hi""""\nval b = """\n// inside raw string b\n"""\n// real\n', 5),
+            ("a.kt", 'fun `has a " quote`() {}\nval b = "x"\n// real\n', 3),
+            ("a.ts", 's.replace(/"/g, "&quot;");\nconst t = `\n// inside template\n`;\n// real\n', 5),
+            ("a.swift", 'let a = #"C:\\"#\nlet b = """\n// inside string b\n"""\n// real\n', 5),
+        )
+        for path, source, real in cases:
+            with self.subTest(path=path):
+                self.assertEqual({real}, render.comment_only_lines(source, path))
+
+    def test_ambiguous_javascript_slash_fails_closed(self):
+        # After `)` only a parser knows regex from division; when the two
+        # readings disagree about quotes, nothing in the file is applyable.
+        for source in ('const r = (a) / "b" / c;\n// note\n', 'if (x) /"/.test(y);\n// note\n'):
+            with self.subTest(source=source):
+                self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("const r = (a) / b / c;\n// note\n", "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines('return /"/.test(y);\n// note\n', "a.ts"))
+
+    def test_python_uses_the_real_tokenizer(self):
+        # Nested same-quote f-strings are Python 3.12 syntax; older tokenizers
+        # reject them and the file fails closed. Either way the string body on
+        # line 3 is never comment-only.
+        nested = 'x = f"{"\\""}"\ny = """\n# inside string y\n"""\n# real\n'
+        self.assertNotIn(3, render.comment_only_lines(nested, "a.py"))
+        self.assertEqual({4}, render.comment_only_lines('x = """\n# inside\n"""\n# real\n', "a.py"))
+        self.assertEqual({1}, render.comment_only_lines('# real\nx = "a\\\n# continued"\n', "a.py"))
+        self.assertEqual(set(), render.comment_only_lines('x = "unterminated\n# looks real\n', "a.py"))
+
+    def test_docstring_replacement_cannot_trail_a_directive(self):
+        for replacement in ('    """Read."""  # type: ignore', '    """Read."""  # noqa', '    """Read."""  # pragma: no cover'):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_docstring_resize_cannot_move_a_coding_cookie(self):
+        source = '"""m\n"""\n# -*- coding: latin-1 -*-\nx = "caf\xe9"\n'
+        diff = (
+            "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n"
+            '@@ -0,0 +1,2 @@\n+"""m\n+"""\n # -*- coding: latin-1 -*-\n x = "caf\xe9"\n'
+        )
+        edit = finding(path="tool.py", start_line=1, end_line=2, replacement='"""n"""')
+        self.assertEqual("note", self.docstring_kind(edit, source, diff))
+
+    def test_docstring_replacement_cannot_add_any_rest_directive(self):
+        for replacement in (
+            '    """Read.\n\n    .. include :: /etc/passwd\n    """',
+            '    """Read.\n\n    .. ifconfig:: __import__("os").system("id")\n    """',
+            '    """Read.\n\n    .. csv-table::\n       :file: /etc/passwd\n    """',
+        ):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_wider_directive_coverage(self):
+        for replacement, path in (
+            ("# nosec", "a.py"), ("# nosemgrep: rule-id", "a.py"), ("# pyre-ignore[16]", "a.py"),
+            ("# yapf: disable", "a.py"), ("// c8 ignore next", "a.ts"), ("/* v8 ignore next */", "a.ts"),
+            ("// tslint:disable", "a.ts"), ("// deno-lint-ignore no-explicit-any", "a.ts"),
+            ("// @refresh reset", "a.tsx"), ("// @generated", "a.ts"), ("// NOSONAR", "a.kt"),
+            ("// codeql[js/xss]", "a.ts"), ("// ktlint-disable no-wildcard-imports", "a.kt"),
+            ("// @formatter:off", "a.kt"), ("// $COVERAGE-IGNORE$", "a.kt"),
+            ("// sourcery: AutoMockable", "a.swift"), ("// periphery:ignore", "a.swift"),
+            ("//lint:ignore SA1019 reason", "a.go"), ("//sys getpid() (pid int)", "a.go"),
+            ("// #nosec G104", "a.go"), ("//nosec", "a.go"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertFalse(render._replacement_is_safe(replacement, path))
+        for replacement, path in (
+            ("// keep the socket open until the ack arrives", "a.ts"),
+            ("# keep going after a transient error", "a.py"),
+            ("// system calls are retried once", "a.go"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertTrue(render._replacement_is_safe(replacement, path))
 
     def test_pathological_source_downgrades_instead_of_crashing(self):
         deep = 'def load(path):\n    """Read."""\n    return ' + "not " * 60000 + "path\n"
