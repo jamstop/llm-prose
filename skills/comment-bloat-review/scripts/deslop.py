@@ -275,6 +275,7 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
             i += 1
             while i < n and text[i] != ch:
                 if text[i] == "\\":
+                    line += text[i + 1:i + 2] == "\n"
                     i += 2
                     continue
                 if text[i] == "\n":

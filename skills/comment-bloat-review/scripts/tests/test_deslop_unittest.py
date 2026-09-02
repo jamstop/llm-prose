@@ -125,6 +125,18 @@ class PrecisionTests(unittest.TestCase):
         self.assertIn("notes-to-self", rules(source, "kotlin", "a.kt"))
         self.assertEqual(set(), rules('fun `has a " quote`() {}\nval u = "http://x"\n', "kotlin", "a.kt"))
 
+    def test_line_continued_string_keeps_comment_line_numbers(self):
+        # Regression: the regular-string scanner skipped a backslash-newline
+        # without counting the line, so every later comment was off by one and
+        # --diff filtering dropped it.
+        for language, path, source, line in (
+            ("python", "a.py", 'text = "one \\\ntwo"\n# per your feedback\n', 3),
+            ("javascript", "a.js", "const s = 'one \\\ntwo \\\nthree';\n// per your feedback\n", 4),
+        ):
+            with self.subTest(language=language):
+                found = [f for f in findings(source, language, path) if f.rule == "notes-to-self"]
+                self.assertEqual([line], [f.line for f in found])
+
     def test_triple_quoted_strings_honor_escapes(self):
         # Python, Swift, and Java text blocks process escapes inside """; an
         # escaped quote run must not close the literal early.
