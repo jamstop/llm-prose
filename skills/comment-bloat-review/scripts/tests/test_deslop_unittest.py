@@ -103,6 +103,23 @@ class PrecisionTests(unittest.TestCase):
         ):
             self.assertEqual(set(), rules(source))
 
+    def test_raw_strings_do_not_swallow_following_comments(self):
+        # Kotlin/Scala/Java """ and Go ` literals take no escapes and may hold an
+        # odd number of quotes; the comment after each must still be seen.
+        for language, path, source in (
+            ("kotlin", "a.kt", 'val s = """a"b"""\n// per your feedback\nval x = 1\n'),
+            ("kotlin", "a.kt", 'val p = """C:\\"""\n// per your feedback\nval x = 1\n'),
+            ("kotlin", "a.kt", 'val t = """a""""\n// per your feedback\nval x = 1\n'),
+            ("scala", "a.scala", 'val q = """where n = \'x\' and m = "y"""\n// per your feedback\nval x = 1\n'),
+            ("java", "A.java", 'String s = """\n  {"k": "v"}\n  """;\n// per your feedback\nint x = 1;\n'),
+            ("go", "a.go", 'p := `C:\\`\n// per your feedback\nvar x = 1\n'),
+        ):
+            with self.subTest(language=language, source=source):
+                self.assertIn("notes-to-self", rules(source, language, path))
+        # A `//` inside the raw literal is string content, not a comment.
+        self.assertEqual(set(), rules('val u = """http://x"""\n', "kotlin", "a.kt"))
+        self.assertEqual(set(), rules("u := `http://x`\n", "go", "a.go"))
+
     def test_fenced_doc_examples_are_ignored_by_every_rule(self):
         for fence in ("```", "~~~"):
             with self.subTest(fence=fence):

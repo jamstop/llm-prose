@@ -45,7 +45,11 @@ _JS = {
 }
 # Rust/Go/C/C++/Java/Kotlin/Scala: `"`/backtick are strings; `'` is a char/rune
 # literal, validated by pattern so a bare lifetime tick is left as ordinary text.
-_CHARLIT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"', "`"], "char": "'"}
+_CHARLIT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"'], "char": "'"}
+# Raw literals take no escapes, so a trailing backslash must not swallow the
+# closing delimiter: Go backticks; Kotlin, Scala, and Java `"""` blocks.
+_GO = {**_CHARLIT, "raw": ["`"]}
+_TEXT_BLOCKS = {**_CHARLIT, "raw": ['"""']}
 # Swift has no single-quote literal at all; just `"` and `"""`.
 _SWIFT = {
     "line": ["//"], "block": [("/*", "*/")], "strings": ['"'],
@@ -60,11 +64,11 @@ _PROFILES = {
     "sql": {"line": ["--"], "block": [("/*", "*/")], "strings": ["'"]},
     "lua": {"line": ["--"], "block": [], "strings": ['"', "'"]},
     "javascript": _JS, "typescript": _JS, "tsx": _JS,
-    "go": _CHARLIT,
+    "go": _GO,
     "rust": {**_CHARLIT, "nested_blocks": True},
-    "java": _CHARLIT,
-    "kotlin": {**_CHARLIT, "nested_blocks": True},
-    "scala": {**_CHARLIT, "nested_blocks": True},
+    "java": _TEXT_BLOCKS,
+    "kotlin": {**_TEXT_BLOCKS, "nested_blocks": True},
+    "scala": {**_TEXT_BLOCKS, "nested_blocks": True},
     "c": _CHARLIT, "cpp": _CHARLIT,
     "swift": _SWIFT,
 }
@@ -153,7 +157,10 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
     line_markers = profile["line"]
     block_pairs = profile.get("block", [])
     strings = profile.get("strings", ['"', "'"])
-    triples = profile.get("triple", [])
+    # Triple-quoted and raw literals both run to their closing delimiter with
+    # no escape processing.
+    raws = profile.get("raw", [])
+    triples = profile.get("triple", []) + raws
     char_quote = profile.get("char")
     comments: list[Comment] = []
     i, n, line = 0, len(text), 1
@@ -244,6 +251,11 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
                     line += 1
                 i += 1
             i += len(triple)
+            if triple in raws and len(triple) > 1:
+                # Kotlin and Scala close at the last three quotes of a run, so
+                # `"""a""""` holds `a"`.
+                while i < n and text[i] == triple[0]:
+                    i += 1
             continue
         if ch == char_quote:
             m = _CHAR_LITERAL.match(text, i)
