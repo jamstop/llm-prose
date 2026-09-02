@@ -599,6 +599,7 @@ def _has_generated_header(source_lines: list[str], comments: list[Comment]) -> b
     comment_lines = {
         line
         for comment in comments
+        if not comment.trailing
         for line in range(comment.line, comment.line + comment.text.count("\n") + 1)
     }
     line = 1
@@ -612,7 +613,9 @@ def _has_generated_header(source_lines: list[str], comments: list[Comment]) -> b
             continue
         break
     return any(
-        comment.line < line and _GENERATED.search(_clean(comment.text))
+        not comment.trailing
+        and comment.line < line
+        and _GENERATED.search(_clean(comment.text))
         for comment in comments
     )
 
