@@ -39,10 +39,20 @@ _DIRECTIVE = re.compile(
 
 
 # Characters str.splitlines() treats as line breaks but git and GitHub do
-# not. A lone \r inside a GitHub line makes the two line models disagree, so
-# a suggestion validated against one line would replace a different one.
-_ODD_LINE_BREAKS = frozenset("\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+# not (a lone \r inside a GitHub line makes the two line models disagree, so
+# a suggestion validated against one line would replace a different one),
+# plus the surrogates that surrogateescape uses for undecodable bytes.
+_UNSAFE_TEXT = re.compile("[\r\v\f\x1c-\x1e\x85\u2028\u2029\udc80-\udcff]")
+# Zero-width and bidi controls make a suggestion render differently from
+# what it applies. No comment rewrite needs them.
+_INVISIBLE_CONTROLS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 _DOCTEST_PROMPT = re.compile(r"^\s*(?:>>>|\.\.\.)(?:\s|$)")
+# Sphinx directives that read files or run code when the docs build.
+_RST_ACTIVE_DIRECTIVE = re.compile(
+    r"^\s*\.\.\s+(?:include|literalinclude|raw|exec|jupyter-execute|plot|"
+    r"doctest|testcode|testsetup|testcleanup|testoutput)::",
+    re.IGNORECASE,
+)
 _DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -54,14 +64,16 @@ def _split_lines(text: str) -> list[str]:
     return lines
 
 
-def _has_odd_line_break(text: str) -> bool:
-    return any(char in _ODD_LINE_BREAKS for char in text)
+def _has_unsafe_text(text: str) -> bool:
+    return bool(_UNSAFE_TEXT.search(text))
 
 
 def _read_untranslated(path: Path) -> str:
     # newline="" disables universal-newline translation, which would turn a
-    # lone \r into \n and hide it from the line-break checks.
-    with path.open(encoding="utf-8", newline="") as handle:
+    # lone \r into \n and hide it from the line-break checks. surrogateescape
+    # keeps one non-UTF-8 file from failing the whole review; findings on its
+    # undecodable lines downgrade instead.
+    with path.open(encoding="utf-8", errors="surrogateescape", newline="") as handle:
         return handle.read()
 
 
@@ -256,8 +268,14 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
         return False
 
     replacement_lines = _split_lines(replacement)
-    # doctest and pytest --doctest-modules execute prompt lines.
-    if any(_DOCTEST_PROMPT.match(line) or _DIRECTIVE.match(line.strip()) for line in replacement_lines):
+    # doctest and pytest --doctest-modules execute prompt lines; Sphinx runs
+    # or inlines the active directives.
+    if any(
+        _DOCTEST_PROMPT.match(line)
+        or _RST_ACTIVE_DIRECTIVE.match(line)
+        or _DIRECTIVE.match(line.strip())
+        for line in replacement_lines
+    ):
         return False
     spliced = "\n".join(lines[: start - 1] + replacement_lines + lines[end:])
     if source.endswith("\n"):
@@ -340,7 +358,11 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
     if any(line > len(source_lines) or source_lines[line - 1] != changed[path][line] for line in range(start, end + 1)):
         return "note", finding
     target_lines = [changed[path][line] for line in range(start, end + 1)]
-    if any(_has_odd_line_break(line) for line in target_lines) or _has_odd_line_break(replacement):
+    if (
+        any(_has_unsafe_text(line) for line in target_lines)
+        or _has_unsafe_text(replacement)
+        or _INVISIBLE_CONTROLS.search(replacement)
+    ):
         return "note", finding
     safe_lines = comment_only_lines(source, path)
     if all(line in safe_lines for line in range(start, end + 1)):

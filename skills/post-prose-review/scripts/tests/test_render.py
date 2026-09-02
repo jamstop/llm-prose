@@ -235,6 +235,8 @@ class RenderTests(unittest.TestCase):
             '        """Read."""',
             '    """Read.',
             '    """Read.\n\n    >>> os.system("id")\n    """',
+            '    """Read.\n\n    .. include:: /etc/passwd\n    """',
+            '    """Read.\n\n    .. testcode::\n\n       os.system("id")\n    """',
         ):
             with self.subTest(replacement=replacement):
                 edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
@@ -277,6 +279,26 @@ class RenderTests(unittest.TestCase):
         for terminator in ("\r", "\u2028", "\u2029", "\x85", "\x0c", "\x0b"):
             with self.subTest(terminator=repr(terminator)):
                 review, _ = self.run_render([finding(replacement=f"// useful reason{terminator}exfiltrate();")])
+                self.assertNotIn("```suggestion", review["comments"][0]["body"])
+
+    def test_non_utf8_file_does_not_fail_the_review(self):
+        raw = b'x = "caf\xe9"\n# as requested\n'
+        text = raw.decode("utf-8", "surrogateescape")
+        diff = "diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n" + "".join(
+            f"+{line}\n" for line in _split(text)
+        )
+        clean = finding(path="a.py", start_line=2, end_line=2, action="delete", replacement="")
+        dirty = finding(path="a.py", start_line=1, end_line=1, action="delete", replacement="")
+        review, _ = self.run_render_file("a.py", raw, diff, [clean, dirty])
+        bodies = [comment["body"] for comment in review["comments"]]
+        self.assertEqual(2, len(bodies))
+        self.assertIn("```suggestion", bodies[0])
+        self.assertNotIn("```suggestion", bodies[1])
+
+    def test_replacement_cannot_carry_invisible_controls(self):
+        for control in ("\u202e", "\u200b", "\u2066", "\ufeff", "\u2060"):
+            with self.subTest(control=repr(control)):
+                review, _ = self.run_render([finding(replacement=f"// useful{control} reason")])
                 self.assertNotIn("```suggestion", review["comments"][0]["body"])
 
     def test_pathological_source_downgrades_instead_of_crashing(self):
