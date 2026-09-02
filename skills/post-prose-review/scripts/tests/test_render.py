@@ -166,6 +166,132 @@ class RenderTests(unittest.TestCase):
         review, _ = self.run_render([hostile])
         self.assertEqual(1, review["comments"][0]["body"].count("```suggestion"))
 
+    def test_unknown_suffixes_fail_closed(self):
+        # Unknown suffixes used to fall through to the `//` profile, so a `//`
+        # line in Markdown, JSON, or Groovy could become a one-click edit.
+        for path in ("CLAUDE.md", "config.json", "settings.toml", "build.gradle", "App.m", "Makefile", "noext"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines("// comment\n", path))
+                self.assertEqual(set(), render.comment_only_lines("# comment\n", path))
+        self.assertEqual({1}, render.comment_only_lines("// comment\n", "build.gradle.kts"))
+
+    def run_render_file(self, path, source_bytes, diff, findings):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_bytes(source_bytes)
+            with patch.object(render, "_source_head", return_value=COMMIT_ID):
+                return render.render({"comment_findings": findings}, diff, root, COMMIT_ID)
+
+    @staticmethod
+    def whole_file_diff(path, source):
+        lines = _split(source)
+        return (
+            f"diff --git a/{path} b/{path}\n--- /dev/null\n+++ b/{path}\n"
+            f"@@ -0,0 +1,{len(lines)} @@\n" + "".join(f"+{line}\n" for line in lines)
+        )
+
+    PY_SOURCE = (
+        "import os\n\n\ndef load(path):\n"
+        '    """Read the config.\n\n    Returns the parsed mapping.\n    """\n'
+        "    return os.environ.get(path)\n"
+    )
+    # Only the docstring lines are added; the surrounding function is not in the diff.
+    PY_DIFF = (
+        "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n@@ -4,4 +4,8 @@\n"
+        ' def load(path):\n+    """Read the config.\n+\n+    Returns the parsed mapping.\n+    """\n'
+        " return os.environ.get(path)\n"
+    )
+
+    def docstring_kind(self, edit, source=None, diff=None):
+        source = self.PY_SOURCE if source is None else source
+        diff = self.PY_DIFF if diff is None else diff
+        review, diagnostics = self.run_render_file("tool.py", source.encode(), diff, [edit])
+        self.assertEqual(1, len(review["comments"]))
+        return "suggestion" if "```suggestion" in review["comments"][0]["body"] else "note"
+
+    def test_docstring_rewrite_and_delete_are_applyable(self):
+        edit = finding(path="tool.py", start_line=5, end_line=8, replacement='    """Read the config as a mapping."""')
+        self.assertEqual("suggestion", self.docstring_kind(edit))
+        delete = finding(path="tool.py", start_line=5, end_line=8, action="delete", replacement="")
+        self.assertEqual("suggestion", self.docstring_kind(delete))
+        module = '"""Tooling.\n\nHelpers for the build.\n"""\nimport os\n'
+        edit = finding(path="tool.py", start_line=1, end_line=4, replacement='"""Build helpers."""')
+        self.assertEqual("suggestion", self.docstring_kind(edit, module, self.whole_file_diff("tool.py", module)))
+
+    def test_docstring_delete_needs_a_remaining_body(self):
+        source = 'def load(path):\n    """Read the config.\n    """\n'
+        delete = finding(path="tool.py", start_line=2, end_line=3, action="delete", replacement="")
+        self.assertEqual("note", self.docstring_kind(delete, source, self.whole_file_diff("tool.py", source)))
+
+    def test_docstring_replacement_cannot_change_code(self):
+        for replacement in (
+            '    """Read."""\n    os.system("id")',
+            '    """Read."""; os.system("id")',
+            '    f"""Read {os.environ}."""',
+            '    b"""Read."""',
+            '    """Read.""" + os.environ["X"]',
+            '"""Read."""',
+            '        """Read."""',
+            '    """Read.',
+            '    """Read.\n\n    >>> os.system("id")\n    """',
+        ):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_docstring_range_and_shape_must_be_exact(self):
+        diff = self.whole_file_diff("tool.py", self.PY_SOURCE)
+        for start, end in ((5, 7), (6, 8), (5, 9), (4, 8)):
+            with self.subTest(start=start, end=end):
+                edit = finding(path="tool.py", start_line=start, end_line=end, replacement='    """Read."""')
+                self.assertEqual("note", self.docstring_kind(edit, self.PY_SOURCE, diff))
+        for source in (
+            'def load(path):\n    text = """Read the config.\n    """\n    return text\n',
+            'def load(path):\n    x = 1\n    """Read the config.\n    """\n    return x\n',
+            'def load(path):\n    """Read the config.\n    """; x = 1\n    return x\n',
+            'def load(path):\n    """Read the config.\n    ééééé"""; x = 1\n    return x\n',
+        ):
+            with self.subTest(source=source):
+                start = next(i for i, line in enumerate(_split(source), 1) if "Read the config" in line)
+                edit = finding(path="tool.py", start_line=start, end_line=start + 1, replacement='    """Read."""')
+                self.assertEqual("note", self.docstring_kind(edit, source, self.whole_file_diff("tool.py", source)))
+
+    def test_lone_carriage_return_cannot_hide_code(self):
+        # git and GitHub break lines on \n only, so each file here is one line.
+        # The parser (and str.splitlines) break on \r too, so a proof on "line
+        # 1" would let a one-click edit delete the code after the \r.
+        edit = finding(path="tool.py", start_line=1, end_line=1, replacement='"""New."""')
+        diff = 'diff --git a/tool.py b/tool.py\n--- /dev/null\n+++ b/tool.py\n@@ -0,0 +1 @@\n+"""Old."""\rverify(request)\n'
+        self.assertEqual("note", self.docstring_kind(edit, '"""Old."""\rverify(request)\n', diff))
+        diff = "diff --git a/src/a.ts b/src/a.ts\n--- /dev/null\n+++ b/src/a.ts\n@@ -0,0 +1 @@\n+// note\rrun();\n"
+        delete = finding(start_line=1, end_line=1, action="delete", replacement="")
+        review, _ = self.run_render_file("src/a.ts", b"// note\rrun();\n", diff, [delete])
+        self.assertNotIn("```suggestion", review["comments"][0]["body"])
+
+    def test_added_text_breaks_lines_only_on_newline(self):
+        diff = "diff --git a/src/a.ts b/src/a.ts\n--- /dev/null\n+++ b/src/a.ts\n@@ -0,0 +1,2 @@\n+// one\rrun();\n+// two\u2028run();\n"
+        self.assertEqual({"src/a.ts": {1: "// one\rrun();", 2: "// two\u2028run();"}}, render.added_text(diff))
+
+    def test_replacement_cannot_smuggle_a_line_terminator(self):
+        for terminator in ("\r", "\u2028", "\u2029", "\x85", "\x0c", "\x0b"):
+            with self.subTest(terminator=repr(terminator)):
+                review, _ = self.run_render([finding(replacement=f"// useful reason{terminator}exfiltrate();")])
+                self.assertNotIn("```suggestion", review["comments"][0]["body"])
+
+    def test_pathological_source_downgrades_instead_of_crashing(self):
+        deep = 'def load(path):\n    """Read."""\n    return ' + "not " * 60000 + "path\n"
+        diff = 'diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n@@ -1,1 +1,2 @@\n def load(path):\n+    """Read."""\n'
+        edit = finding(path="tool.py", start_line=2, end_line=2, replacement='    """Load."""')
+        self.assertEqual("note", self.docstring_kind(edit, deep, diff))
+
+
+def _split(text):
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
 
 if __name__ == "__main__":
     unittest.main()

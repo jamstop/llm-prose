@@ -10,6 +10,7 @@ the host project's dependencies.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import subprocess
@@ -37,12 +38,39 @@ _DIRECTIVE = re.compile(
 )
 
 
+# Characters str.splitlines() treats as line breaks but git and GitHub do
+# not. A lone \r inside a GitHub line makes the two line models disagree, so
+# a suggestion validated against one line would replace a different one.
+_ODD_LINE_BREAKS = frozenset("\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+_DOCTEST_PROMPT = re.compile(r"^\s*(?:>>>|\.\.\.)(?:\s|$)")
+_DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _split_lines(text: str) -> list[str]:
+    """Split on \\n only, matching how git and GitHub number lines."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _has_odd_line_break(text: str) -> bool:
+    return any(char in _ODD_LINE_BREAKS for char in text)
+
+
+def _read_untranslated(path: Path) -> str:
+    # newline="" disables universal-newline translation, which would turn a
+    # lone \r into \n and hide it from the line-break checks.
+    with path.open(encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
 def added_text(diff: str) -> dict[str, dict[int, str]]:
     result: dict[str, dict[int, str]] = {}
     path: str | None = None
     line_number = 0
     in_hunk = False
-    for line in diff.splitlines():
+    for line in _split_lines(diff):
         if line.startswith("diff --git "):
             path, in_hunk = None, False
         elif not in_hunk and line.startswith("+++ "):
@@ -61,20 +89,24 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
     return result
 
 
+_SLASH_COMMENT_SUFFIXES = frozenset({
+    ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".swift", ".go", ".kt", ".kts", ".scala",
+})
+_NESTED_BLOCK_SUFFIXES = frozenset({".swift", ".kt", ".kts", ".scala"})
+
+
 def _profile(path: str) -> tuple[str | None, bool, bool, tuple[str, ...]]:
     suffix = Path(path).suffix.lower()
     if suffix in {".py", ".pyi"}:
         return "#", False, False, ('"""', "'''", '"', "'")
-    if suffix in {
-        ".rb", ".sql", ".lua", ".sh", ".bash", ".yaml", ".yml",
-        ".rs", ".c", ".h", ".cpp", ".cc", ".hpp", ".cxx", ".java",
-    }:
-        # Their heredocs, raw strings, long strings, or block scalars require a
-        # real parser. Findings remain useful, but never become one-click edits.
-        return None, False, False, ()
-    blocks = suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".swift", ".go", ".kt", ".scala"}
-    nested = suffix in {".swift", ".kt", ".scala"}
-    return "//", blocks, nested, ('"""', "'''", "`", '"', "'")
+    if suffix in _SLASH_COMMENT_SUFFIXES:
+        return "//", True, suffix in _NESTED_BLOCK_SUFFIXES, ('"""', "'''", "`", '"', "'")
+    # Fail closed for every other suffix. Some need a real parser (heredocs,
+    # YAML block scalars, Groovy slashy strings); some have no comment syntax
+    # at all (Markdown, JSON), so "comment-only" would prove nothing and a
+    # one-click edit into agent-instruction Markdown or workflow YAML is a
+    # privileged write. Findings remain useful, but never become one-click edits.
+    return None, False, False, ()
 
 
 def comment_only_lines(source: str, path: str) -> set[int]:
@@ -166,7 +198,7 @@ def comment_only_lines(source: str, path: str) -> set[int]:
 def _replacement_is_safe(replacement: str, path: str) -> bool:
     if not replacement:
         return True
-    lines = replacement.splitlines()
+    lines = _split_lines(replacement)
     nonblank = {index for index, line in enumerate(lines, 1) if line.strip()}
     return (
         bool(nonblank)
@@ -174,6 +206,78 @@ def _replacement_is_safe(replacement: str, path: str) -> bool:
         and not any("/*" in line or "*/" in line for line in lines)
         and not any(_DIRECTIVE.match(line.strip()) for line in lines)
     )
+
+
+def _docstring_owners(tree: ast.AST) -> list[ast.AST]:
+    return [
+        node for node in ast.walk(tree)
+        if isinstance(node, _DOCSTRING_OWNERS)
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    ]
+
+
+def _structure(tree: ast.AST) -> str:
+    """Dump the tree with every docstring's text blanked, so two dumps agree
+    exactly when nothing but docstring text differs."""
+    for owner in _docstring_owners(tree):
+        owner.body[0].value.value = ""
+    return ast.dump(tree)
+
+
+def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str) -> bool:
+    """Prove the range is exactly one Python docstring and the replacement
+    swaps only its text. Docstrings lex as strings, so the comment-only proof
+    cannot see them; the AST can."""
+    if "\r" in source:
+        # The parser counts \r as a line break; git does not, so line numbers
+        # from the two would disagree.
+        return False
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return False
+    lines = _split_lines(source)
+    owner = next(
+        (
+            node for node in _docstring_owners(tree)
+            if node.body[0].lineno == start and node.body[0].end_lineno == end
+        ),
+        None,
+    )
+    if owner is None:
+        return False
+    target = owner.body[0]
+    # ast column offsets count UTF-8 bytes, so compare against encoded lines.
+    first, last = lines[start - 1].encode(), lines[end - 1].encode()
+    if target.col_offset != len(first) - len(first.lstrip()) or last[target.end_col_offset:].strip():
+        return False
+
+    replacement_lines = _split_lines(replacement)
+    # doctest and pytest --doctest-modules execute prompt lines.
+    if any(_DOCTEST_PROMPT.match(line) or _DIRECTIVE.match(line.strip()) for line in replacement_lines):
+        return False
+    spliced = "\n".join(lines[: start - 1] + replacement_lines + lines[end:])
+    if source.endswith("\n"):
+        spliced += "\n"
+    try:
+        new_tree = ast.parse(spliced)
+    except (SyntaxError, ValueError):
+        return False
+    if replacement:
+        new_end = start + len(replacement_lines) - 1
+        if not any(
+            node.body[0].lineno == start and node.body[0].end_lineno == new_end
+            for node in _docstring_owners(new_tree)
+        ):
+            return False
+    else:
+        owner.body.pop(0)
+        if not owner.body:
+            return False
+    return _structure(tree) == _structure(new_tree)
 
 
 def _safe_review_text(value: str) -> str:
@@ -229,19 +333,31 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
     if root not in candidate.parents or canonical != candidate:
         return "note", finding
     try:
-        source = candidate.read_text(encoding="utf-8")
-    except OSError:
+        source = _read_untranslated(candidate)
+    except (OSError, ValueError):
         return "note", finding
-    source_lines = source.splitlines()
+    source_lines = _split_lines(source)
     if any(line > len(source_lines) or source_lines[line - 1] != changed[path][line] for line in range(start, end + 1)):
         return "note", finding
+    target_lines = [changed[path][line] for line in range(start, end + 1)]
+    if any(_has_odd_line_break(line) for line in target_lines) or _has_odd_line_break(replacement):
+        return "note", finding
     safe_lines = comment_only_lines(source, path)
-    safe = (
-        all(line in safe_lines for line in range(start, end + 1))
-        and not any("/*" in changed[path][line] or "*/" in changed[path][line] for line in range(start, end + 1))
-        and not any(_DIRECTIVE.match(changed[path][line].strip()) for line in range(start, end + 1))
-        and _replacement_is_safe(replacement, path)
-    )
+    if all(line in safe_lines for line in range(start, end + 1)):
+        safe = (
+            not any("/*" in line or "*/" in line for line in target_lines)
+            and not any(_DIRECTIVE.match(line.strip()) for line in target_lines)
+            and _replacement_is_safe(replacement, path)
+        )
+    elif Path(path).suffix.lower() in {".py", ".pyi"}:
+        try:
+            safe = _docstring_edit_is_safe(source, start, end, replacement)
+        except (RecursionError, MemoryError):
+            # ast on a pathological head file; one finding downgrades rather
+            # than the run failing.
+            safe = False
+    else:
+        safe = False
     return ("suggestion" if safe else "note"), finding
 
 
@@ -280,7 +396,7 @@ def render(
         else:
             comment["body"] = (
                 f"{rationale}\n\n"
-                "No one-click suggestion: this range was not proven to contain only replaceable comment text."
+                "No one-click suggestion: this range was not proven to contain only replaceable comment or docstring text."
             )
             diagnostics.append(f"downgraded finding {index} to a plain note")
         comments.append(comment)
@@ -302,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     result = json.loads(Path(args.result).read_text(encoding="utf-8"))
     review, diagnostics = render(
         result,
-        Path(args.diff).read_text(encoding="utf-8"),
+        _read_untranslated(Path(args.diff)),
         Path(args.source_root),
         args.commit_id,
     )
