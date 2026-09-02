@@ -118,23 +118,50 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
 
 # Which `//`-comment languages the scanner understands. `quotes` take
 # backslash escapes; `raw` literals run to their closing delimiter with none
-# (Go backticks; Kotlin and Scala `"""` and backtick identifiers). Anything
-# not listed fails closed: some suffixes need a real parser (heredocs, YAML
-# block scalars, Groovy slashy strings); some have no comment syntax at all
-# (Markdown, JSON), so "comment-only" would prove nothing and a one-click edit
-# into agent-instruction Markdown or workflow YAML is a privileged write.
-_JS_PROFILE = {"quotes": ("`", '"', "'"), "raw": (), "nested": False, "regex": True}
-_KOTLIN_PROFILE = {"quotes": ('"', "'"), "raw": ('"""', "`"), "nested": True, "regex": False}
+# (Go backticks; Kotlin and Scala `"""` and backtick identifiers);
+# `single_line` quotes cannot legally reach the end of a line, so one that
+# does means the scanner has lost sync and the whole file fails closed.
+# Anything not listed fails closed: some suffixes need a real parser
+# (heredocs, YAML block scalars, Groovy slashy strings); some have no comment
+# syntax at all (Markdown, JSON), so "comment-only" would prove nothing and a
+# one-click edit into agent-instruction Markdown or workflow YAML is a
+# privileged write.
+# `template` names the string kinds whose `${ ... }` holds code (JS template
+# literals; Kotlin and Scala strings, where the expression may span lines).
+_JS_PROFILE = {
+    "quotes": ("`", '"', "'"), "raw": (), "single_line": ('"', "'"),
+    "nested": False, "regex": True, "template": ("`",),
+}
+_KOTLIN_PROFILE = {
+    "quotes": ('"', "'"), "raw": ('"""', "`"), "single_line": ('"', "'"),
+    "nested": True, "regex": False, "template": ('"', '"""'),
+}
+_NO_STRINGS_PROFILE = {
+    "quotes": (), "raw": (), "single_line": (),
+    "nested": False, "regex": False, "template": (),
+}
 _SLASH_PROFILES = {
     ".js": _JS_PROFILE, ".jsx": _JS_PROFILE, ".mjs": _JS_PROFILE, ".cjs": _JS_PROFILE,
-    ".ts": _JS_PROFILE, ".tsx": _JS_PROFILE,
+    ".ts": _JS_PROFILE, ".tsx": _JS_PROFILE, ".mts": _JS_PROFILE, ".cts": _JS_PROFILE,
     ".kt": _KOTLIN_PROFILE, ".kts": _KOTLIN_PROFILE, ".scala": _KOTLIN_PROFILE,
-    ".swift": {"quotes": ('"""', '"'), "raw": (), "nested": True, "regex": False},
-    ".go": {"quotes": ('"', "'"), "raw": ("`",), "nested": False, "regex": False},
+    ".swift": {
+        "quotes": ('"""', '"'), "raw": (), "single_line": ('"',),
+        "nested": True, "regex": False, "template": (),
+    },
+    ".go": {
+        "quotes": ('"', "'"), "raw": ("`",), "single_line": ('"', "'"),
+        "nested": False, "regex": False, "template": (),
+    },
     # Apple localization tables: C-style comments around `"key" = "value";`.
-    ".strings": {"quotes": ('"',), "raw": (), "nested": False, "regex": False},
-    # GLSL has no string literals at all.
-    ".glsl": {"quotes": (), "raw": (), "nested": False, "regex": False},
+    ".strings": {
+        "quotes": ('"',), "raw": (), "single_line": (),
+        "nested": False, "regex": False, "template": (),
+    },
+    # GLSL and Metal have no string literals; in xcconfig `//` always starts
+    # a comment, even inside a URL.
+    ".glsl": _NO_STRINGS_PROFILE,
+    ".metal": _NO_STRINGS_PROFILE,
+    ".xcconfig": _NO_STRINGS_PROFILE,
 }
 # Starlark (.bzl/.bazel) is a Python subset; the Python tokenizer reads it.
 _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".bzl", ".bazel"})
@@ -158,6 +185,9 @@ def comment_only_lines(source: str, path: str) -> set[int]:
 def _python_comment_only_lines(source: str) -> set[int]:
     # The stdlib tokenizer is exact where a hand scanner is not: nested
     # f-string quotes, escapes, continuations. Any tokenizer error fails closed.
+    if "\r" in source:
+        # Tokenizer versions disagree about what a lone \r is; git does not.
+        return set()
     commented: set[int] = set()
     coded: set[int] = set()
     inert = {
@@ -185,7 +215,8 @@ def _python_comment_only_lines(source: str) -> set[int]:
 
 def _js_regex_end(source: str, index: int) -> int | None:
     """End index of a regex literal starting at `index`, or None if the
-    slash cannot be one (no closing slash on the line)."""
+    slash cannot be one: no closing slash on the line, or the "closing"
+    slash begins a comment (`a / b // c` read as a regex)."""
     position = index + 1
     in_class = False
     while position < len(source) and source[position] != "\n":
@@ -198,6 +229,8 @@ def _js_regex_end(source: str, index: int) -> int | None:
         elif char == "]":
             in_class = False
         elif char == "/" and not in_class:
+            if source.startswith(("//", "/*"), position):
+                return None
             position += 1
             while position < len(source) and (source[position].isalnum() or source[position] == "_"):
                 position += 1
@@ -208,40 +241,49 @@ def _js_regex_end(source: str, index: int) -> int | None:
 
 def _js_regex_context(source: str, index: int) -> str:
     """'yes' if a slash at `index` must start a regex, 'no' if it must be
-    division, 'maybe' after `)` where only a parser could tell."""
+    division, 'maybe' after `)`, `+`, or `-` where only a parser could tell
+    (`if (x) /re/` vs `(a) / b`; `a + /re/.source` vs `i++ / 2`)."""
     position = index - 1
     while position >= 0 and source[position] in " \t":
         position -= 1
-    if position < 0 or source[position] in "\n=(:,[!&|?{};>+-*%^~<":
+    if position < 0 or source[position] in "\n=(:,[!&|?{};>*%^~<":
         return "yes"
-    if source[position] == ")":
+    if source[position] in ")+-":
         return "maybe"
-    match = re.search(r"[A-Za-z_$][\w$]*$", source[:position + 1])
-    if match and match.group(0) in _JS_REGEX_KEYWORDS and not (
-        match.start() > 0 and source[match.start() - 1] in ".$"
-    ):
+    word_end = position + 1
+    while position >= 0 and (source[position].isalnum() or source[position] in "_$"):
+        position -= 1
+    word = source[position + 1:word_end]
+    if word in _JS_REGEX_KEYWORDS and not (position >= 0 and source[position] in ".$"):
         return "yes"
     return "no"
 
 
 def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[int]:
+    # `frames` is the lexical stack: ("quote", delimiter, is_raw) for an open
+    # string, ("expr", brace_depth) for a `${ ... }` inside a JS template.
+    # Code mode is the empty stack or an expr frame on top.
     result: set[int] = set()
+    frames: list[tuple] = []
     line = 1
     index = 0
-    quote: str | None = None
-    quote_is_raw = False
     escaped = False
     block_depth = 0
     block_start_line = 0
     line_has_code = False
     line_has_comment = False
+    template = profile["template"]
     while index < len(source):
         char = source[index]
+        top = frames[-1] if frames else None
+        in_quote = top is not None and top[0] == "quote"
         if char == "\n":
+            if in_quote and top[1] in profile["single_line"] and not escaped:
+                return set()
             if line_has_comment and not line_has_code:
                 result.add(line)
             line += 1
-            line_has_code = quote is not None
+            line_has_code = bool(frames)
             line_has_comment = block_depth > 0
             escaped = False
             index += 1
@@ -257,22 +299,26 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             else:
                 index += 1
             continue
-        if quote:
+        if in_quote:
+            _, quote, is_raw = top
             line_has_code = True
             if escaped:
                 escaped = False
                 index += 1
-            elif char == "\\" and not quote_is_raw:
+            elif char == "\\" and not is_raw:
                 escaped = True
                 index += 1
+            elif quote in template and source.startswith("${", index):
+                frames.append(("expr", 1))
+                index += 2
             elif source.startswith(quote, index):
                 index += len(quote)
-                if quote_is_raw and len(quote) > 1 and quote[0] == '"':
+                if is_raw and len(quote) > 1 and quote[0] == '"':
                     # Kotlin and Scala close at the last three quotes of a
                     # run, so `"""a""""` holds `a"`.
                     while index < len(source) and source[index] == '"':
                         index += 1
-                quote = None
+                frames.pop()
             else:
                 index += 1
             continue
@@ -289,6 +335,14 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             block_depth = 1
             block_start_line = line
             index += 2
+            continue
+        if top is not None and char in "{}":
+            depth = top[1] + (1 if char == "{" else -1)
+            frames[-1] = ("expr", depth)
+            if depth == 0:
+                frames.pop()
+            line_has_code = True
+            index += 1
             continue
         if profile["regex"] and char == "/":
             end = _js_regex_end(source, index)
@@ -309,24 +363,25 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             raw_quote = re.match(r'(#+)("""|"|/)', source[index:])
             if raw_quote:
                 line_has_code = True
-                quote = raw_quote.group(2) + raw_quote.group(1)
-                quote_is_raw = True
+                frames.append(("quote", raw_quote.group(2) + raw_quote.group(1), True))
                 index += len(raw_quote.group(0))
                 continue
         matched = next((item for item in profile["raw"] if source.startswith(item, index)), None)
         if matched:
             line_has_code = True
-            quote, quote_is_raw = matched, True
+            frames.append(("quote", matched, True))
             index += len(matched)
             continue
         matched = next((item for item in profile["quotes"] if source.startswith(item, index)), None)
         if matched:
             line_has_code = True
-            quote, quote_is_raw = matched, False
+            frames.append(("quote", matched, False))
             index += len(matched)
             continue
         line_has_code = True
         index += 1
+    if frames and frames[-1][0] == "quote" and frames[-1][1] in profile["single_line"]:
+        return set()
     if line_has_comment and not line_has_code and not block_depth:
         result.add(line)
     if block_depth:

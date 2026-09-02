@@ -338,6 +338,38 @@ class RenderTests(unittest.TestCase):
         self.assertEqual({2}, render.comment_only_lines("const r = (a) / b / c;\n// note\n", "a.ts"))
         self.assertEqual({2}, render.comment_only_lines('return /"/.test(y);\n// note\n', "a.ts"))
 
+    def test_template_expressions_are_code(self):
+        # Regression: a nested template closed the outer one and the scanner
+        # stayed desynced for the rest of the file.
+        source = (
+            "const s = `\n  ${a ? `//x` : `y`}\n  // still inside the template\n"
+            "  ${b ? ` as \\`${c}\\`` : \"\"}\n`;\n// real\n"
+        )
+        self.assertEqual({6}, render.comment_only_lines(source, "a.ts"))
+        kotlin = (
+            'val s = "seeking ${\n    position // inside expression\n}"\n// real\n'
+            'val t = """\n// inside raw ${x}\n"""\n// also real\n'
+        )
+        self.assertEqual({4, 8}, render.comment_only_lines(kotlin, "a.kt"))
+
+    def test_unclosed_single_line_string_fails_the_file_closed(self):
+        jsx = "export const A = () => (\n  <p>Don't do that</p>\n);\n// real\n"
+        self.assertEqual(set(), render.comment_only_lines(jsx, "a.tsx"))
+        self.assertEqual(set(), render.comment_only_lines('val a = "open\n// real\n', "a.kt"))
+        self.assertEqual({3}, render.comment_only_lines("const a = 'x\\\n';\n// real\n", "a.ts"))
+
+    def test_division_before_a_comment_is_not_a_regex(self):
+        self.assertEqual({2}, render.comment_only_lines("x = i++ / 2; // it's\n// real\n", "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("x = (a) / 2; // it's\n// real\n", "a.ts"))
+
+    def test_grammars_without_string_literals(self):
+        shader = '// the "paused" treatment\nfloat4 c = tex.sample(s, uv); // gamma\n'
+        for path in ("Waveform.metal", "aura.glsl"):
+            self.assertEqual({1}, render.comment_only_lines(shader, path))
+        xcconfig = '#include "base.xcconfig"\n// "Designed for iPad"\nURL = https:/$()/x.com // c\n'
+        self.assertEqual({2}, render.comment_only_lines(xcconfig, "Config/suno.xcconfig"))
+        self.assertEqual({1}, render.comment_only_lines("// note\nexport {};\n", "a.mts"))
+
     def test_python_uses_the_real_tokenizer(self):
         # Nested same-quote f-strings are Python 3.12 syntax; older tokenizers
         # reject them and the file fails closed. Either way the string body on
