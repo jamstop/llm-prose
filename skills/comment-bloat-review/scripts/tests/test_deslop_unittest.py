@@ -120,6 +120,22 @@ class PrecisionTests(unittest.TestCase):
         self.assertEqual(set(), rules('val u = """http://x"""\n', "kotlin", "a.kt"))
         self.assertEqual(set(), rules("u := `http://x`\n", "go", "a.go"))
 
+    def test_kotlin_backtick_identifiers_may_hold_a_quote(self):
+        source = 'fun `rejects unterminated " quote`() {\n    val u = "http://x" // per your feedback\n}\n'
+        self.assertIn("notes-to-self", rules(source, "kotlin", "a.kt"))
+        self.assertEqual(set(), rules('fun `has a " quote`() {}\nval u = "http://x"\n', "kotlin", "a.kt"))
+
+    def test_triple_quoted_strings_honor_escapes(self):
+        # Python, Swift, and Java text blocks process escapes inside """; an
+        # escaped quote run must not close the literal early.
+        for language, path, source in (
+            ("python", "a.py", 'text = """say \\"""hi\\""" now"""\n# per your feedback\n'),
+            ("swift", "a.swift", 'let text = """\n  say \\"""hi\\"""\n  """\n// per your feedback\n'),
+            ("java", "A.java", 'String s = """\n    a\\"""\n    """;\n// per your feedback\nint x = 1;\n'),
+        ):
+            with self.subTest(language=language):
+                self.assertIn("notes-to-self", rules(source, language, path))
+
     def test_fenced_doc_examples_are_ignored_by_every_rule(self):
         for fence in ("```", "~~~"):
             with self.subTest(fence=fence):

@@ -47,9 +47,12 @@ _JS = {
 # literal, validated by pattern so a bare lifetime tick is left as ordinary text.
 _CHARLIT = {"line": ["//"], "block": [("/*", "*/")], "strings": ['"'], "char": "'"}
 # Raw literals take no escapes, so a trailing backslash must not swallow the
-# closing delimiter: Go backticks; Kotlin, Scala, and Java `"""` blocks.
+# closing delimiter: Go backticks; Kotlin and Scala `"""` strings and backtick
+# identifiers, which may hold a `"`. Java text blocks process escapes
+# (`\"""` embeds a triple quote), so they are `triple`, not `raw`.
 _GO = {**_CHARLIT, "raw": ["`"]}
-_TEXT_BLOCKS = {**_CHARLIT, "raw": ['"""']}
+_JAVA = {**_CHARLIT, "triple": ['"""']}
+_KOTLIN_LIKE = {**_CHARLIT, "raw": ['"""', "`"], "nested_blocks": True}
 # Swift has no single-quote literal at all; just `"` and `"""`.
 _SWIFT = {
     "line": ["//"], "block": [("/*", "*/")], "strings": ['"'],
@@ -66,9 +69,9 @@ _PROFILES = {
     "javascript": _JS, "typescript": _JS, "tsx": _JS,
     "go": _GO,
     "rust": {**_CHARLIT, "nested_blocks": True},
-    "java": _TEXT_BLOCKS,
-    "kotlin": {**_TEXT_BLOCKS, "nested_blocks": True},
-    "scala": {**_TEXT_BLOCKS, "nested_blocks": True},
+    "java": _JAVA,
+    "kotlin": _KOTLIN_LIKE,
+    "scala": _KOTLIN_LIKE,
     "c": _CHARLIT, "cpp": _CHARLIT,
     "swift": _SWIFT,
 }
@@ -157,8 +160,8 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
     line_markers = profile["line"]
     block_pairs = profile.get("block", [])
     strings = profile.get("strings", ['"', "'"])
-    # Triple-quoted and raw literals both run to their closing delimiter with
-    # no escape processing.
+    # Triple-quoted literals honor backslash escapes (`\"""` stays inside);
+    # raw literals run to their closing delimiter with no escape processing.
     raws = profile.get("raw", [])
     triples = profile.get("triple", []) + raws
     char_quote = profile.get("char")
@@ -245,13 +248,18 @@ def extract_comments(text: str, profile: dict) -> list[Comment]:
                     continue
         triple = startswith_any(triples)
         if triple:
+            is_raw = triple in raws
             i += len(triple)
             while i < n and not text.startswith(triple, i):
+                if not is_raw and text[i] == "\\":
+                    line += text[i + 1:i + 2] == "\n"
+                    i += 2
+                    continue
                 if text[i] == "\n":
                     line += 1
                 i += 1
             i += len(triple)
-            if triple in raws and len(triple) > 1:
+            if is_raw and len(triple) > 1:
                 # Kotlin and Scala close at the last three quotes of a run, so
                 # `"""a""""` holds `a"`.
                 while i < n and text[i] == triple[0]:
