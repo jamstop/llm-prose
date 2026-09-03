@@ -147,22 +147,22 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
     return result
 
 
-# Which `//`-comment languages the scanner understands. `quotes` take
-# backslash escapes; `raw` literals run to their closing delimiter with none
-# (Go backticks; Kotlin and Scala `"""` and backtick identifiers);
-# `single_line` quotes cannot legally reach the end of a line, so one that
-# does means the scanner has lost sync and the whole file fails closed.
-# Anything not listed fails closed: some suffixes need a real parser
-# (heredocs, YAML block scalars, Groovy slashy strings); some have no comment
-# syntax at all (Markdown, JSON), so "comment-only" would prove nothing and a
-# one-click edit into agent-instruction Markdown or workflow YAML is a
-# privileged write.
-# `template` names the string kinds whose `${ ... }` holds code (JS template
-# literals; Kotlin and Scala strings, where the expression may span lines).
-# `block` is whether `/* */` is a comment; `splice` is whether a backslash
-# before a newline joins the two lines (the C preprocessor); `fail_on` is
-# syntax the scanner does not model, whose presence fails the file closed;
-# `html` is whether Annex B HTML-like comments exist (JavaScript scripts).
+# Which `//`-comment languages the scanner understands, and how each lexes:
+# - `quotes` take backslash escapes; `raw` literals run to their closing
+#   delimiter with none (Go backticks; Kotlin and Scala `"""` and backtick
+#   identifiers).
+# - `single_line` quotes cannot legally reach the end of a line, so one that
+#   does means the scanner has lost sync and the whole file fails closed.
+# - `nested` is whether `/* /* */ */` nests (Swift, Kotlin, Scala).
+# - `regex` is whether a `/` may open a regex literal (JavaScript).
+# - `template` names the string kinds whose `${ ... }` holds code (JS
+#   template literals; Kotlin and Scala strings, where the expression may
+#   span lines).
+# - `block` is whether `/* */` is a comment; `splice` is whether a backslash
+#   before a newline joins the two lines (the C preprocessor).
+# - `fail_on` is syntax the scanner does not model, whose presence fails the
+#   file closed; `html` is whether Annex B HTML-like comments exist
+#   (JavaScript scripts).
 _JS_PROFILE = {
     "quotes": ("`", '"', "'"), "raw": (), "single_line": ('"', "'"),
     "nested": False, "regex": True, "template": ("`",), "block": True, "splice": False,
@@ -235,6 +235,11 @@ def comment_only_lines(source: str, path: str) -> set[int]:
         return _python_comment_only_lines(source)
     profile = _SLASH_PROFILES.get(suffix)
     if profile is None:
+        # Anything unlisted fails closed: some suffixes need a real parser
+        # (heredocs, YAML block scalars, Groovy slashy strings); some have no
+        # comment syntax at all (Markdown, JSON), so "comment-only" would
+        # prove nothing and a one-click edit into agent-instruction Markdown
+        # or workflow YAML is a privileged write.
         return set()
     return _slash_comment_only_lines(source, suffix, profile)
 
