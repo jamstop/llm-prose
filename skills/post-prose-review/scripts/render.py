@@ -23,19 +23,28 @@ from typing import Any
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _ACTIONS = {"delete", "tighten", "move"}
-# `@`-annotations that JSX transforms, test runners, and minifiers read from
-# any comment, including the interior lines of a docblock.
+# `@`-tags that JSX transforms, test runners, minifiers, and `tsc --checkJs`
+# read from any comment, including the interior lines of a docblock.
 _ANNOTATION = (
     r"@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
-    r"preserve|license|refresh|ts-\w+)\b"
+    r"preserve|license|refresh|ts-\w+|type|typedef|template|param|returns?|"
+    r"satisfies|import|callback|this|extends|augments|implements|enum|"
+    r"deprecated|internal|module|exports)\b"
 )
-_DIRECTIVE = re.compile(
+# Markers whose casing the compiler or its tools check, so prose that happens
+# to use the same words (`// output: ...`, `// +1 ...`) is not one.
+_COMPILER_DIRECTIVE = re.compile(
     r"^(?:#!|#.*\bcoding[:=]|"
     # `// +build`, `// +kubebuilder:`, `// +k8s:`: Go build tags and marker
-    # comments that code generators read; `// Output:` is compared by go test.
-    r"///\s*<(?:reference|amd-)|//>|//go:|//\s*\+[\w:]|//line\b|"
-    r"//extern\b|//export\b|//sys\b|//\s*#cgo\b|#cgo\b|//\s*(?:Unordered )?output:|"
-    r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@|"
+    # comments that code generators read. `// Output:` is compared by
+    # `go test`; `// Deprecated:` and `// BUG(` are read by the doc tools.
+    r"///\s*<(?:reference|amd-)|//>|//go:|//\s*\+[A-Za-z]|//line\b|"
+    r"//extern\b|//export\b|//sys\b|//\s*#cgo\b|#cgo\b|"
+    r"//\s*(?:Output|Unordered output):|//\s*Deprecated:|//\s*BUG\(|"
+    r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@)"
+)
+_TOOL_DIRECTIVE = re.compile(
+    r"^(?:"
     r"//\s*(?:swift-tools-version:|swift-format-(?:ignore|ignore-file)\b|"
     r"swiftformat:|swiftlint:|sourcery:|periphery:|"
     r"eslint-(?:disable|enable)(?:-next-line|-line)?\b|eslint-env\b|"
@@ -44,18 +53,24 @@ _DIRECTIVE = re.compile(
     r"deno-fmt-ignore\b|dprint-ignore\b|" + _ANNOTATION + r"|"
     r"NOSONAR\b|codeql\[|lgtm\s*\[|"
     r"ktlint-(?:disable|enable)\b|@formatter:|\$COVERAGE-(?:IGNORE|OFF|ON)\$|"
-    r"scalafmt:|scalastyle:|scalafix:|"
-    r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|"
-    r"lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:)|"
+    r"scalafmt:|scalastyle:|scalafix:|format:\s*(?:off|on)\b|"
+    r"noinspection\b|goland:|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|"
+    r"nolint\b|lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:|exhaustruct:)|"
+    r"///\s*sourcery:|"
     r"#\s*(?:noqa\b|flake8:|pyright:|pyre-|pylint:|mypy:|ruff:|fmt:|yapf:|isort:|"
     r"cython:|distutils:|nosec\b|nosemgrep\b|skipcq\b|codespell:|sourcery\s+skip\b|"
-    r"keep$|gazelle:|buildifier:|buildozer:|"
+    r"keep$|gazelle:|buildifier:|buildozer:|vim:|-\*-|Local Variables:|"
     r"pragma:|shellcheck\b|yamllint\b)|"
-    r"/\*\*?\s*(?:eslint-(?:disable|enable)|biome-ignore|prettier-ignore|"
+    r"/\*\*?\s*(?:eslint-(?:disable|enable)|eslint-env|global|globals|exported|"
+    r"biome-ignore|prettier-ignore|"
     r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore|" + _ANNOTATION + r")\b|"
     r"\*\s*" + _ANNOTATION + r")",
     re.IGNORECASE,
 )
+
+
+def _is_directive(text: str) -> bool:
+    return bool(_COMPILER_DIRECTIVE.match(text) or _TOOL_DIRECTIVE.match(text))
 
 
 # Characters str.splitlines() treats as line breaks but git and GitHub do
@@ -140,18 +155,30 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
 # `template` names the string kinds whose `${ ... }` holds code (JS template
 # literals; Kotlin and Scala strings, where the expression may span lines).
 # `block` is whether `/* */` is a comment; `splice` is whether a backslash
-# before a newline joins the two lines (the C preprocessor).
+# before a newline joins the two lines (the C preprocessor); `fail_on` is
+# syntax the scanner does not model, whose presence fails the file closed;
+# `html` is whether Annex B HTML-like comments exist (JavaScript scripts).
 _JS_PROFILE = {
     "quotes": ("`", '"', "'"), "raw": (), "single_line": ('"', "'"),
     "nested": False, "regex": True, "template": ("`",), "block": True, "splice": False,
+    "fail_on": None, "html": True,
 }
 _KOTLIN_PROFILE = {
     "quotes": ('"', "'"), "raw": ('"""', "`"), "single_line": ('"', "'"),
     "nested": True, "regex": False, "template": ('"', '"""'), "block": True, "splice": False,
+    "fail_on": None, "html": False,
 }
-_SHADER_PROFILE = {
+_GLSL_PROFILE = {
     "quotes": (), "raw": (), "single_line": (),
     "nested": False, "regex": False, "template": (), "block": True, "splice": True,
+    "fail_on": None, "html": False,
+}
+# Metal is C++14: string and character literals, and `R"(...)"` raw strings
+# whose delimiters the scanner does not model.
+_METAL_PROFILE = {
+    "quotes": ('"', "'"), "raw": (), "single_line": ('"', "'"),
+    "nested": False, "regex": False, "template": (), "block": True, "splice": True,
+    "fail_on": re.compile(r'\bR"'), "html": False,
 }
 _SLASH_PROFILES = {
     # Not .jsx/.tsx: JSX text children are rendered UI, and a child that
@@ -162,24 +189,29 @@ _SLASH_PROFILES = {
     ".swift": {
         "quotes": ('"""', '"'), "raw": (), "single_line": ('"',),
         "nested": True, "regex": False, "template": (), "block": True, "splice": False,
+        "fail_on": None, "html": False,
     },
     ".go": {
         "quotes": ('"', "'"), "raw": ("`",), "single_line": ('"', "'"),
         "nested": False, "regex": False, "template": (), "block": True, "splice": False,
+        "fail_on": None, "html": False,
     },
     # Apple localization tables: C-style comments around `"key" = "value";`.
     ".strings": {
         "quotes": ('"',), "raw": (), "single_line": (),
         "nested": False, "regex": False, "template": (), "block": True, "splice": False,
+        "fail_on": None, "html": False,
     },
-    # GLSL and Metal have no string literals but do have the C preprocessor.
-    ".glsl": _SHADER_PROFILE,
-    ".metal": _SHADER_PROFILE,
+    # GLSL has no string literals; both shader languages have the C
+    # preprocessor.
+    ".glsl": _GLSL_PROFILE,
+    ".metal": _METAL_PROFILE,
     # xcconfig: `//` always starts a comment, even inside a URL, and there
     # are no block comments, so `/*` and `*/` lines are live settings.
     ".xcconfig": {
         "quotes": (), "raw": (), "single_line": (),
         "nested": False, "regex": False, "template": (), "block": False, "splice": False,
+        "fail_on": None, "html": False,
     },
 }
 _HASHES = re.compile("#+")
@@ -294,7 +326,11 @@ def _swift_interpolation(source: str, index: int, quote: str, is_raw: bool) -> i
     after = index + 1 + len(hashes)
     if source.startswith("(", after):
         return after + 1 - index
-    return -(after + 1 - index) if is_raw else 0
+    if not is_raw or after >= len(source) or source[after] == "\n":
+        # A `\#` before the newline is a line continuation; the newline
+        # branch must still see it to count the line.
+        return 0
+    return -(after + 1 - index)
 
 
 def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[int]:
@@ -306,14 +342,21 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
         # These languages end a `//` comment at `\r` or U+2028; git does not.
         # A comment that hides a string opener would desync every later line.
         return set()
+    if profile["fail_on"] is not None and profile["fail_on"].search(source):
+        return set()
     result: set[int] = set()
     frames: list[tuple] = []
     line = 1
     index = 0
     escaped = False
+    if source.startswith("#!"):
+        # A hashbang is a comment to the language but names the interpreter,
+        # so the line is neither code to scan nor prose to edit.
+        newline = source.find("\n")
+        index = len(source) if newline == -1 else newline
     block_depth = 0
     block_start_line = 0
-    line_has_code = False
+    line_has_code = index > 0
     line_has_comment = False
     template = profile["template"]
     while index < len(source):
@@ -381,6 +424,13 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             newline = source.find("\n", index)
             index = len(source) if newline == -1 else newline
             continue
+        if profile["html"] and (
+            source.startswith("<!--", index)
+            or (not line_has_code and source.startswith("-->", index))
+        ):
+            # Annex B makes these comments in scripts; modules and TypeScript
+            # read them as operators. Neither reading is worth modelling.
+            return set()
         if profile["block"] and source.startswith("/*", index):
             line_has_comment = True
             block_depth = 1
@@ -465,7 +515,7 @@ def _replacement_is_safe(replacement: str, path: str) -> bool:
         and not any("/*" in line or "*/" in line for line in lines)
         # The C preprocessor would join the next line onto this comment.
         and not any(line.rstrip().endswith("\\") for line in lines)
-        and not any(_DIRECTIVE.match(line.strip()) for line in lines)
+        and not any(_is_directive(line.strip()) for line in lines)
     )
 
 
@@ -522,12 +572,12 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
     if any(
         _DOCTEST_PROMPT.match(line)
         or _RST_DIRECTIVE.match(line)
-        or _DIRECTIVE.match(line.strip())
+        or _is_directive(line.strip())
         for line in replacement_lines
     ):
         return False
     if start <= 2 and len(replacement_lines) != end - start + 1 and any(
-        _DIRECTIVE.match(text.strip()) for text in lines[:3]
+        _is_directive(text.strip()) for text in lines[:3]
     ):
         # Growing or shrinking a docstring at the top of the file moves the
         # lines below it, and a coding cookie is only live on lines 1-2.
@@ -644,12 +694,12 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
             Path(path).suffix in _PYTHON_SUFFIXES
             and start <= 2
             and len(_split_lines(replacement)) != end - start + 1
-            and any(_DIRECTIVE.match(text.strip()) for text in source_lines[:3])
+            and any(_is_directive(text.strip()) for text in source_lines[:3])
         )
         safe = (
             not moves_cookie
             and not any("/*" in line or "*/" in line for line in target_lines)
-            and not any(_DIRECTIVE.match(line.strip()) for line in target_lines)
+            and not any(_is_directive(line.strip()) for line in target_lines)
             and _replacement_is_safe(replacement, path)
         )
     elif Path(path).suffix in {".py", ".pyi"}:
