@@ -571,10 +571,29 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(set(), render.comment_only_lines('x = "unterminated\n# looks real\n', "a.py"))
 
     def test_docstring_replacement_cannot_trail_a_directive(self):
-        for replacement in ('    """Read."""  # type: ignore', '    """Read."""  # noqa', '    """Read."""  # pragma: no cover'):
+        for replacement in (
+            '    """Read."""  # type: ignore', '    """Read."""  # noqa', '    """Read."""  # pragma: no cover',
+            # Parentheses make the Expr end at `)`, past a comment the AST
+            # never sees; a backslash joins a second string onto the first.
+            '    ("""Read.""" # type: ignore\n    )', '    ("""Read."""  # flake8: noqa\n    )',
+            '    """Read.""" \\\n    """More."""', '    ("""Read.""")',
+        ):
             with self.subTest(replacement=replacement):
                 edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
                 self.assertEqual("note", self.docstring_kind(edit))
+                self.assertFalse(render._docstring_edit_is_safe(self.PY_SOURCE, 5, 8, replacement))
+
+    def test_parenthesized_docstring_is_not_applyable(self):
+        # The head's own docstring can hide a directive behind a parenthesis
+        # too; replacing it with a bare string would drop the directive.
+        source = 'def load(path):\n    ("""Read the config.\n    """  # type: ignore\n    )\n    return 1\n'
+        diff = (
+            "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n"
+            "@@ -0,0 +1,5 @@\n" + "".join(f"+{line}\n" for line in source.splitlines())
+        )
+        edit = finding(path="tool.py", start_line=2, end_line=4, replacement='    """Read."""')
+        self.assertEqual("note", self.docstring_kind(edit, source, diff))
+        self.assertFalse(render._docstring_edit_is_safe(source, 2, 4, '    """Read."""'))
 
     def test_docstring_resize_cannot_move_a_coding_cookie(self):
         source = '"""m\n"""\n# -*- coding: latin-1 -*-\nx = "caf\xe9"\n'

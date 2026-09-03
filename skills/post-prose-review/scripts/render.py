@@ -542,6 +542,24 @@ def _structure(tree: ast.AST) -> str:
     return ast.dump(tree)
 
 
+_LAYOUT_TOKENS = frozenset({
+    tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER,
+})
+
+
+def _is_lone_string(text: str) -> bool:
+    """Whether the text is one string literal with no comment, paren, or peer."""
+    try:
+        kinds = [
+            token.type
+            for token in tokenize.generate_tokens(io.StringIO(text).readline)
+            if token.type not in _LAYOUT_TOKENS
+        ]
+    except (tokenize.TokenError, SyntaxError):
+        return False
+    return kinds == [tokenize.STRING]
+
+
 def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str) -> bool:
     """Prove the range is exactly one Python docstring and the replacement
     swaps only its text. Docstrings lex as strings, so the comment-only proof
@@ -569,8 +587,14 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
     first, last = lines[start - 1].encode(), lines[end - 1].encode()
     if target.col_offset != len(first) - len(first.lstrip()) or last[target.end_col_offset:].strip():
         return False
+    if not _is_lone_string("\n".join(lines[start - 1:end])):
+        # `("""doc""" # type: ignore\n)` is one Expr whose end column is the
+        # parenthesis, so the check above cannot see the comment inside.
+        return False
 
     replacement_lines = _split_lines(replacement)
+    if replacement and not _is_lone_string(replacement):
+        return False
     # doctest and pytest --doctest-modules execute prompt lines; Sphinx runs
     # or inlines the active directives.
     if any(
