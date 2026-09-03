@@ -26,13 +26,13 @@ _ACTIONS = {"delete", "tighten", "move"}
 # `@`-tags that JSX transforms, test runners, minifiers, and `tsc --checkJs`
 # read from any comment, including the interior lines of a docblock.
 _ANNOTATION = (
-    r"@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
+    r"(?:@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
     r"preserve|license|refresh|ts-\w+|deprecated|internal|module|exports|"
-    r"template|typedef|callback|"
+    r"template|typedef|callback)\b|"
     # JSDoc typing tags carry a `{type}`; KDoc `@param x desc` does not and
     # stays editable prose.
-    r"(?:type|param|returns?|satisfies|import|this|extends|augments|"
-    r"implements|enum)\s*\{)\b"
+    r"@(?:type|param|returns?|satisfies|import|this|extends|augments|"
+    r"implements|enum)\s*\{)"
 )
 # Markers whose casing the compiler or its tools check, so prose that happens
 # to use the same words (`// output: ...`, `// +1 ...`) is not one.
@@ -67,7 +67,8 @@ _TOOL_DIRECTIVE = re.compile(
     r"pragma:|shellcheck\b|yamllint\b)|"
     r"/\*\*?\s*(?:eslint-(?:disable|enable)|eslint-env|global|globals|exported|"
     r"biome-ignore|prettier-ignore|"
-    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore|" + _ANNOTATION + r")\b|"
+    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore)\b|"
+    r"/\*\*?\s*" + _ANNOTATION + r"|"
     r"\*\s*" + _ANNOTATION + r")",
     re.IGNORECASE,
 )
@@ -555,7 +556,7 @@ def _is_lone_string(text: str) -> bool:
             for token in tokenize.generate_tokens(io.StringIO(text).readline)
             if token.type not in _LAYOUT_TOKENS
         ]
-    except (tokenize.TokenError, SyntaxError):
+    except (tokenize.TokenError, SyntaxError, ValueError):
         return False
     return kinds == [tokenize.STRING]
 

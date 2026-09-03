@@ -503,6 +503,7 @@ class RenderTests(unittest.TestCase):
             # Go doc-tool conventions, and editor mode lines.
             "/* global foo */", "/* exported foo */", "/* eslint-env node */",
             " * @type {string}", " * @param {number} x", " * @returns {void}",
+            " * @type {*}", " * @param {{a: string}} x", " * @type { Foo }",
             " * @typedef {Object} Foo", "/** @template T */",
             "// Deprecated: use Bar", "// BUG(rsc): loses precision",
             # `go test` matches the output marker in any case.
