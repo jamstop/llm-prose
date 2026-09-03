@@ -27,9 +27,12 @@ _ACTIONS = {"delete", "tighten", "move"}
 # read from any comment, including the interior lines of a docblock.
 _ANNOTATION = (
     r"@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
-    r"preserve|license|refresh|ts-\w+|type|typedef|template|param|returns?|"
-    r"satisfies|import|callback|this|extends|augments|implements|enum|"
-    r"deprecated|internal|module|exports)\b"
+    r"preserve|license|refresh|ts-\w+|deprecated|internal|module|exports|"
+    r"template|typedef|callback|"
+    # JSDoc typing tags carry a `{type}`; KDoc `@param x desc` does not and
+    # stays editable prose.
+    r"(?:type|param|returns?|satisfies|import|this|extends|augments|"
+    r"implements|enum)\s*\{)\b"
 )
 # Markers whose casing the compiler or its tools check, so prose that happens
 # to use the same words (`// output: ...`, `// +1 ...`) is not one.
@@ -37,10 +40,11 @@ _COMPILER_DIRECTIVE = re.compile(
     r"^(?:#!|#.*\bcoding[:=]|"
     # `// +build`, `// +kubebuilder:`, `// +k8s:`: Go build tags and marker
     # comments that code generators read. `// Output:` is compared by
-    # `go test`; `// Deprecated:` and `// BUG(` are read by the doc tools.
+    # `go test` (in any case); `// Deprecated:` and `// BUG(` are read by the
+    # doc tools and are case-sensitive.
     r"///\s*<(?:reference|amd-)|//>|//go:|//\s*\+[A-Za-z]|//line\b|"
     r"//extern\b|//export\b|//sys\b|//\s*#cgo\b|#cgo\b|"
-    r"//\s*(?:Output|Unordered output):|//\s*Deprecated:|//\s*BUG\(|"
+    r"//\s*(?i:(?:unordered )?output):|//\s*Deprecated:|//\s*BUG\(|"
     r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@)"
 )
 _TOOL_DIRECTIVE = re.compile(

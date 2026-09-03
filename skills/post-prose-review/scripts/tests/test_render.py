@@ -505,7 +505,9 @@ class RenderTests(unittest.TestCase):
             " * @type {string}", " * @param {number} x", " * @returns {void}",
             " * @typedef {Object} Foo", "/** @template T */",
             "// Deprecated: use Bar", "// BUG(rsc): loses precision",
-            "// Unordered output:", "// format: off", "// nolint:errcheck",
+            # `go test` matches the output marker in any case.
+            "// Unordered output:", "// output:", "// UNORDERED OUTPUT:",
+            "// format: off", "// nolint:errcheck",
             "//goland:noinspection Foo", "/// sourcery: skipEquality",
             "# vim: set ts=4:", "# -*- mode: python -*-", "# Local Variables:",
         ):
@@ -513,10 +515,12 @@ class RenderTests(unittest.TestCase):
                 self.assertTrue(render._is_directive(text.strip()))
         for text in (
             " * explains the why", "// plus one for the header", "// output of f is cached",
-            # Go markers are case-sensitive; prose using the words is not one.
-            "// output: the list of ids we return", "// +1 for the null terminator",
-            "// deprecated in favour of the new path", "// a global lock",
-            "// exported for tests", "// bug in the parser",
+            # Prose that shares words with a case-sensitive Go marker.
+            "// +1 for the null terminator", "// deprecated in favour of the new path",
+            "// a global lock", "// exported for tests", "// bug in the parser",
+            # KDoc tags carry no `{type}`, so they are editable prose.
+            " * @param request the thing to send", " * @return the parsed body",
+            " * @throws IOException when the socket closes",
         ):
             with self.subTest(text=text):
                 self.assertFalse(render._is_directive(text.strip()))
