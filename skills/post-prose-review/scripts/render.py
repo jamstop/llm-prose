@@ -26,13 +26,13 @@ _ACTIONS = {"delete", "tighten", "move"}
 # `@`-tags that JSX transforms, test runners, minifiers, and `tsc --checkJs`
 # read from any comment, including the interior lines of a docblock.
 _ANNOTATION = (
-    r"@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
+    r"(?:@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
     r"preserve|license|refresh|ts-\w+|deprecated|internal|module|exports|"
-    r"template|typedef|callback|"
+    r"template|typedef|callback)\b|"
     # JSDoc typing tags carry a `{type}`; KDoc `@param x desc` does not and
     # stays editable prose.
-    r"(?:type|param|returns?|satisfies|import|this|extends|augments|"
-    r"implements|enum)\s*\{)\b"
+    r"@(?:type|param|returns?|satisfies|import|this|extends|augments|"
+    r"implements|enum)\s*\{)"
 )
 # Markers whose casing the compiler or its tools check, so prose that happens
 # to use the same words (`// output: ...`, `// +1 ...`) is not one.
@@ -67,7 +67,8 @@ _TOOL_DIRECTIVE = re.compile(
     r"pragma:|shellcheck\b|yamllint\b)|"
     r"/\*\*?\s*(?:eslint-(?:disable|enable)|eslint-env|global|globals|exported|"
     r"biome-ignore|prettier-ignore|"
-    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore|" + _ANNOTATION + r")\b|"
+    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore)\b|"
+    r"/\*\*?\s*" + _ANNOTATION + r"|"
     r"\*\s*" + _ANNOTATION + r")",
     re.IGNORECASE,
 )
@@ -146,22 +147,22 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
     return result
 
 
-# Which `//`-comment languages the scanner understands. `quotes` take
-# backslash escapes; `raw` literals run to their closing delimiter with none
-# (Go backticks; Kotlin and Scala `"""` and backtick identifiers);
-# `single_line` quotes cannot legally reach the end of a line, so one that
-# does means the scanner has lost sync and the whole file fails closed.
-# Anything not listed fails closed: some suffixes need a real parser
-# (heredocs, YAML block scalars, Groovy slashy strings); some have no comment
-# syntax at all (Markdown, JSON), so "comment-only" would prove nothing and a
-# one-click edit into agent-instruction Markdown or workflow YAML is a
-# privileged write.
-# `template` names the string kinds whose `${ ... }` holds code (JS template
-# literals; Kotlin and Scala strings, where the expression may span lines).
-# `block` is whether `/* */` is a comment; `splice` is whether a backslash
-# before a newline joins the two lines (the C preprocessor); `fail_on` is
-# syntax the scanner does not model, whose presence fails the file closed;
-# `html` is whether Annex B HTML-like comments exist (JavaScript scripts).
+# Which `//`-comment languages the scanner understands, and how each lexes:
+# - `quotes` take backslash escapes; `raw` literals run to their closing
+#   delimiter with none (Go backticks; Kotlin and Scala `"""` and backtick
+#   identifiers).
+# - `single_line` quotes cannot legally reach the end of a line, so one that
+#   does means the scanner has lost sync and the whole file fails closed.
+# - `nested` is whether `/* /* */ */` nests (Swift, Kotlin, Scala).
+# - `regex` is whether a `/` may open a regex literal (JavaScript).
+# - `template` names the string kinds whose `${ ... }` holds code (JS
+#   template literals; Kotlin and Scala strings, where the expression may
+#   span lines).
+# - `block` is whether `/* */` is a comment; `splice` is whether a backslash
+#   before a newline joins the two lines (the C preprocessor).
+# - `fail_on` is syntax the scanner does not model, whose presence fails the
+#   file closed; `html` is whether Annex B HTML-like comments exist
+#   (JavaScript scripts).
 _JS_PROFILE = {
     "quotes": ("`", '"', "'"), "raw": (), "single_line": ('"', "'"),
     "nested": False, "regex": True, "template": ("`",), "block": True, "splice": False,
@@ -234,6 +235,11 @@ def comment_only_lines(source: str, path: str) -> set[int]:
         return _python_comment_only_lines(source)
     profile = _SLASH_PROFILES.get(suffix)
     if profile is None:
+        # Anything unlisted fails closed: some suffixes need a real parser
+        # (heredocs, YAML block scalars, Groovy slashy strings); some have no
+        # comment syntax at all (Markdown, JSON), so "comment-only" would
+        # prove nothing and a one-click edit into agent-instruction Markdown
+        # or workflow YAML is a privileged write.
         return set()
     return _slash_comment_only_lines(source, suffix, profile)
 
@@ -542,6 +548,24 @@ def _structure(tree: ast.AST) -> str:
     return ast.dump(tree)
 
 
+_LAYOUT_TOKENS = frozenset({
+    tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER,
+})
+
+
+def _is_lone_string(text: str) -> bool:
+    """Whether the text is one string literal with no comment, paren, or peer."""
+    try:
+        kinds = [
+            token.type
+            for token in tokenize.generate_tokens(io.StringIO(text).readline)
+            if token.type not in _LAYOUT_TOKENS
+        ]
+    except (tokenize.TokenError, SyntaxError, ValueError):
+        return False
+    return kinds == [tokenize.STRING]
+
+
 def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str) -> bool:
     """Prove the range is exactly one Python docstring and the replacement
     swaps only its text. Docstrings lex as strings, so the comment-only proof
@@ -569,8 +593,14 @@ def _docstring_edit_is_safe(source: str, start: int, end: int, replacement: str)
     first, last = lines[start - 1].encode(), lines[end - 1].encode()
     if target.col_offset != len(first) - len(first.lstrip()) or last[target.end_col_offset:].strip():
         return False
+    if not _is_lone_string("\n".join(lines[start - 1:end])):
+        # `("""doc""" # type: ignore\n)` is one Expr whose end column is the
+        # parenthesis, so the check above cannot see the comment inside.
+        return False
 
     replacement_lines = _split_lines(replacement)
+    if replacement and not _is_lone_string(replacement):
+        return False
     # doctest and pytest --doctest-modules execute prompt lines; Sphinx runs
     # or inlines the active directives.
     if any(
