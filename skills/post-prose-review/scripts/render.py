@@ -174,11 +174,11 @@ _GLSL_PROFILE = {
     "fail_on": None, "html": False,
 }
 # Metal is C++14: string and character literals, and `R"(...)"` raw strings
-# whose delimiters the scanner does not model.
+# (with any encoding prefix) whose delimiters the scanner does not model.
 _METAL_PROFILE = {
     "quotes": ('"', "'"), "raw": (), "single_line": ('"', "'"),
     "nested": False, "regex": False, "template": (), "block": True, "splice": True,
-    "fail_on": re.compile(r'\bR"'), "html": False,
+    "fail_on": re.compile(r'(?<![A-Za-z0-9_])(?:u8|u|U|L)?R"'), "html": False,
 }
 _SLASH_PROFILES = {
     # Not .jsx/.tsx: JSX text children are rendered UI, and a child that
