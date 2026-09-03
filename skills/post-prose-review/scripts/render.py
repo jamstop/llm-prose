@@ -34,7 +34,7 @@ _DIRECTIVE = re.compile(
     # `// +build`, `// +kubebuilder:`, `// +k8s:`: Go build tags and marker
     # comments that code generators read; `// Output:` is compared by go test.
     r"///\s*<(?:reference|amd-)|//>|//go:|//\s*\+[\w:]|//line\b|"
-    r"//extern\b|//export\b|//\s*#cgo\b|#cgo\b|//\s*(?:Unordered )?output:|"
+    r"//extern\b|//export\b|//sys\b|//\s*#cgo\b|#cgo\b|//\s*(?:Unordered )?output:|"
     r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@|"
     r"//\s*(?:swift-tools-version:|swift-format-(?:ignore|ignore-file)\b|"
     r"swiftformat:|swiftlint:|sourcery:|periphery:|"
@@ -42,11 +42,11 @@ _DIRECTIVE = re.compile(
     r"biome-ignore(?:-all)?\b|prettier-ignore\b|istanbul\s+ignore\b|"
     r"c8\s+ignore\b|v8\s+ignore\b|tslint:|deno-lint-ignore\b|oxlint-|"
     r"deno-fmt-ignore\b|dprint-ignore\b|" + _ANNOTATION + r"|"
-    r"NOSONAR\b|codeql\[|lgtm\b|"
+    r"NOSONAR\b|codeql\[|lgtm\s*\[|"
     r"ktlint-(?:disable|enable)\b|@formatter:|\$COVERAGE-(?:IGNORE|OFF|ON)\$|"
     r"scalafmt:|scalastyle:|scalafix:|"
     r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|"
-    r"lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:|sys\b)|"
+    r"lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:)|"
     r"#\s*(?:noqa\b|flake8:|pyright:|pyre-|pylint:|mypy:|ruff:|fmt:|yapf:|isort:|"
     r"cython:|distutils:|nosec\b|nosemgrep\b|skipcq\b|codespell:|sourcery\s+skip\b|"
     r"keep$|gazelle:|buildifier:|buildozer:|"
@@ -302,6 +302,10 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
     # string, ("expr", depth, opener, closer) for code inside a string: a JS
     # or Kotlin `${ ... }`, a Swift `\( ... )`. Code mode is the empty stack
     # or an expr frame on top.
+    if _UNSAFE_TEXT.search(source):
+        # These languages end a `//` comment at `\r` or U+2028; git does not.
+        # A comment that hides a string opener would desync every later line.
+        return set()
     result: set[int] = set()
     frames: list[tuple] = []
     line = 1
@@ -360,7 +364,7 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
                 index += 2
             elif source.startswith(quote, index):
                 index += len(quote)
-                if is_raw and len(quote) > 1 and quote[0] == '"':
+                if is_raw and quote == '"""':
                     # Kotlin and Scala close at the last three quotes of a
                     # run, so `"""a""""` holds `a"`.
                     while index < len(source) and source[index] == '"':
@@ -430,7 +434,10 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             continue
         line_has_code = True
         index += 1
-    if frames and frames[-1][0] == "quote" and frames[-1][1] in profile["single_line"]:
+    if frames and frames[-1][0] == "quote":
+        # An unterminated string at end of file: a multi-line kind means the
+        # file does not compile, a single-line kind means the scanner lost
+        # sync somewhere above. Either way nothing after it is proven.
         return set()
     if line_has_comment and not line_has_code and not block_depth:
         result.add(line)

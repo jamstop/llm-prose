@@ -413,6 +413,25 @@ class RenderTests(unittest.TestCase):
         self.assertEqual({3}, render.comment_only_lines(" // x \\ \n y();\n// real\n", "a.glsl"))
         self.assertFalse(render._replacement_is_safe("// tighter \\", "a.metal"))
 
+    def test_slash_scanner_fails_closed_on_foreign_line_terminators(self):
+        # `\r` ends a `//` comment in JS, Swift, Kotlin, and Go but not in
+        # git, so a comment can hide a string opener from the scanner.
+        source = "// note\rconst s = `\n// inside template\n`;\n// real\n"
+        self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual(set(), render.comment_only_lines("// a\u2028let s = \"\"\"\n// in\n\"\"\"\n", "a.swift"))
+
+    def test_unterminated_string_at_end_of_file_proves_nothing(self):
+        # An odd quote in a .strings table leaves the scanner in string mode
+        # with no single-line rule to trip; the whole file fails closed.
+        self.assertEqual(set(), render.comment_only_lines('// note\n"key" = "value;\n// later\n', "a.strings"))
+        self.assertEqual(set(), render.comment_only_lines('// note\nval s = """\n// later\n', "a.kt"))
+
+    def test_go_sys_and_lgtm_directives_need_their_exact_shape(self):
+        self.assertTrue(render._DIRECTIVE.match("//sys getpid() (pid int)"))
+        self.assertTrue(render._DIRECTIVE.match("// lgtm[js/xss]"))
+        self.assertFalse(render._DIRECTIVE.match("// sys.argv is read here"))
+        self.assertFalse(render._DIRECTIVE.match("// LGTM, ship it"))
+
     def test_xcconfig_has_no_block_comments(self):
         source = "/*\nOTHER_LDFLAGS = $(inherited) -Wl,-foo\n*/\n// real\n"
         self.assertEqual({4}, render.comment_only_lines(source, "a.xcconfig"))
