@@ -23,26 +23,37 @@ from typing import Any
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _ACTIONS = {"delete", "tighten", "move"}
+# `@`-annotations that JSX transforms, test runners, and minifiers read from
+# any comment, including the interior lines of a docblock.
+_ANNOTATION = (
+    r"@(?:jsx\w*|jest-environment|vitest-environment|format|flow|generated|"
+    r"preserve|license|refresh|ts-\w+)\b"
+)
 _DIRECTIVE = re.compile(
     r"^(?:#!|#.*\bcoding[:=]|"
-    r"///\s*<(?:reference|amd-)|//>|//go:|// \+build\b|//line\b|"
-    r"//extern\b|//export\b|//\s*#cgo\b|#cgo\b|"
+    # `// +build`, `// +kubebuilder:`, `// +k8s:`: Go build tags and marker
+    # comments that code generators read; `// Output:` is compared by go test.
+    r"///\s*<(?:reference|amd-)|//>|//go:|//\s*\+[\w:]|//line\b|"
+    r"//extern\b|//export\b|//\s*#cgo\b|#cgo\b|//\s*(?:Unordered )?output:|"
     r"// Code generated .* DO NOT EDIT\.$|#\s*type:|//#|//@|"
     r"//\s*(?:swift-tools-version:|swift-format-(?:ignore|ignore-file)\b|"
     r"swiftformat:|swiftlint:|sourcery:|periphery:|"
     r"eslint-(?:disable|enable)(?:-next-line|-line)?\b|eslint-env\b|"
-    r"biome-ignore(?:-all)?\b|prettier-ignore\b|istanbul\s+ignore\b|@ts-|"
+    r"biome-ignore(?:-all)?\b|prettier-ignore\b|istanbul\s+ignore\b|"
     r"c8\s+ignore\b|v8\s+ignore\b|tslint:|deno-lint-ignore\b|oxlint-|"
-    r"@refresh\b|@generated\b|NOSONAR\b|codeql\[|lgtm\b|"
-    r"ktlint-(?:disable|enable)\b|@formatter:|\$COVERAGE-IGNORE\$|"
-    r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|@flow\b|"
+    r"deno-fmt-ignore\b|dprint-ignore\b|" + _ANNOTATION + r"|"
+    r"NOSONAR\b|codeql\[|lgtm\b|"
+    r"ktlint-(?:disable|enable)\b|@formatter:|\$COVERAGE-(?:IGNORE|OFF|ON)\$|"
+    r"scalafmt:|scalastyle:|scalafix:|"
+    r"noinspection\b|clang-format\b|NOLINT(?:NEXTLINE|BEGIN|END)?\b|"
     r"lint:ignore\b|nosec\b|#nosec\b|gocyclo:|revive:|sys\b)|"
     r"#\s*(?:noqa\b|flake8:|pyright:|pyre-|pylint:|mypy:|ruff:|fmt:|yapf:|isort:|"
     r"cython:|distutils:|nosec\b|nosemgrep\b|skipcq\b|codespell:|sourcery\s+skip\b|"
     r"keep$|gazelle:|buildifier:|buildozer:|"
     r"pragma:|shellcheck\b|yamllint\b)|"
-    r"/\*\s*(?:eslint-(?:disable|enable)|biome-ignore|prettier-ignore|"
-    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore)\b)",
+    r"/\*\*?\s*(?:eslint-(?:disable|enable)|biome-ignore|prettier-ignore|"
+    r"istanbul\s+ignore|c8\s+ignore|v8\s+ignore|" + _ANNOTATION + r")\b|"
+    r"\*\s*" + _ANNOTATION + r")",
     re.IGNORECASE,
 )
 
@@ -128,41 +139,50 @@ def added_text(diff: str) -> dict[str, dict[int, str]]:
 # privileged write.
 # `template` names the string kinds whose `${ ... }` holds code (JS template
 # literals; Kotlin and Scala strings, where the expression may span lines).
+# `block` is whether `/* */` is a comment; `splice` is whether a backslash
+# before a newline joins the two lines (the C preprocessor).
 _JS_PROFILE = {
     "quotes": ("`", '"', "'"), "raw": (), "single_line": ('"', "'"),
-    "nested": False, "regex": True, "template": ("`",),
+    "nested": False, "regex": True, "template": ("`",), "block": True, "splice": False,
 }
 _KOTLIN_PROFILE = {
     "quotes": ('"', "'"), "raw": ('"""', "`"), "single_line": ('"', "'"),
-    "nested": True, "regex": False, "template": ('"', '"""'),
+    "nested": True, "regex": False, "template": ('"', '"""'), "block": True, "splice": False,
 }
-_NO_STRINGS_PROFILE = {
+_SHADER_PROFILE = {
     "quotes": (), "raw": (), "single_line": (),
-    "nested": False, "regex": False, "template": (),
+    "nested": False, "regex": False, "template": (), "block": True, "splice": True,
 }
 _SLASH_PROFILES = {
-    ".js": _JS_PROFILE, ".jsx": _JS_PROFILE, ".mjs": _JS_PROFILE, ".cjs": _JS_PROFILE,
-    ".ts": _JS_PROFILE, ".tsx": _JS_PROFILE, ".mts": _JS_PROFILE, ".cts": _JS_PROFILE,
+    # Not .jsx/.tsx: JSX text children are rendered UI, and a child that
+    # starts with `//` is not a comment.
+    ".js": _JS_PROFILE, ".mjs": _JS_PROFILE, ".cjs": _JS_PROFILE,
+    ".ts": _JS_PROFILE, ".mts": _JS_PROFILE, ".cts": _JS_PROFILE,
     ".kt": _KOTLIN_PROFILE, ".kts": _KOTLIN_PROFILE, ".scala": _KOTLIN_PROFILE,
     ".swift": {
         "quotes": ('"""', '"'), "raw": (), "single_line": ('"',),
-        "nested": True, "regex": False, "template": (),
+        "nested": True, "regex": False, "template": (), "block": True, "splice": False,
     },
     ".go": {
         "quotes": ('"', "'"), "raw": ("`",), "single_line": ('"', "'"),
-        "nested": False, "regex": False, "template": (),
+        "nested": False, "regex": False, "template": (), "block": True, "splice": False,
     },
     # Apple localization tables: C-style comments around `"key" = "value";`.
     ".strings": {
         "quotes": ('"',), "raw": (), "single_line": (),
-        "nested": False, "regex": False, "template": (),
+        "nested": False, "regex": False, "template": (), "block": True, "splice": False,
     },
-    # GLSL and Metal have no string literals; in xcconfig `//` always starts
-    # a comment, even inside a URL.
-    ".glsl": _NO_STRINGS_PROFILE,
-    ".metal": _NO_STRINGS_PROFILE,
-    ".xcconfig": _NO_STRINGS_PROFILE,
+    # GLSL and Metal have no string literals but do have the C preprocessor.
+    ".glsl": _SHADER_PROFILE,
+    ".metal": _SHADER_PROFILE,
+    # xcconfig: `//` always starts a comment, even inside a URL, and there
+    # are no block comments, so `/*` and `*/` lines are live settings.
+    ".xcconfig": {
+        "quotes": (), "raw": (), "single_line": (),
+        "nested": False, "regex": False, "template": (), "block": False, "splice": False,
+    },
 }
+_HASHES = re.compile("#+")
 # Starlark (.bzl/.bazel) is a Python subset; the Python tokenizer reads it.
 _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".bzl", ".bazel"})
 _JS_REGEX_KEYWORDS = frozenset({
@@ -173,7 +193,7 @@ _JS_REGEX_KEYWORDS = frozenset({
 
 def comment_only_lines(source: str, path: str) -> set[int]:
     """Return lines whose non-whitespace content is entirely comment text."""
-    suffix = Path(path).suffix.lower()
+    suffix = Path(path).suffix
     if suffix in _PYTHON_SUFFIXES:
         return _python_comment_only_lines(source)
     profile = _SLASH_PROFILES.get(suffix)
@@ -222,6 +242,10 @@ def _js_regex_end(source: str, index: int) -> int | None:
     while position < len(source) and source[position] != "\n":
         char = source[position]
         if char == "\\":
+            if position + 1 >= len(source) or source[position + 1] == "\n":
+                # A regex literal cannot contain a line break, escaped or
+                # not; this slash was division before a continued string.
+                return None
             position += 2
             continue
         if char == "[":
@@ -241,14 +265,15 @@ def _js_regex_end(source: str, index: int) -> int | None:
 
 def _js_regex_context(source: str, index: int) -> str:
     """'yes' if a slash at `index` must start a regex, 'no' if it must be
-    division, 'maybe' after `)`, `+`, or `-` where only a parser could tell
-    (`if (x) /re/` vs `(a) / b`; `a + /re/.source` vs `i++ / 2`)."""
+    division, 'maybe' where only a parser could tell: after `)`, `+`, `-`
+    (`if (x) /re/` vs `(a) / b`; `a + /re/.source` vs `i++ / 2`), after `}`
+    or `!` (`{} / 2`, TypeScript's `a! / 2`), or at the start of a line."""
     position = index - 1
     while position >= 0 and source[position] in " \t":
         position -= 1
-    if position < 0 or source[position] in "\n=(:,[!&|?{};>*%^~<":
+    if position < 0 or source[position] in "=(:,[&|?{;>*%^~<":
         return "yes"
-    if source[position] in ")+-":
+    if source[position] in ")+-}!\n":
         return "maybe"
     word_end = position + 1
     while position >= 0 and (source[position].isalnum() or source[position] in "_$"):
@@ -259,10 +284,24 @@ def _js_regex_context(source: str, index: int) -> str:
     return "no"
 
 
+def _swift_interpolation(source: str, index: int, quote: str, is_raw: bool) -> int:
+    """Length of the `\\(` (or `\\#(` for a `#"..."#` literal) that opens an
+    interpolation at `index`, or the length of the escape sequence there in a
+    raw literal, negated. 0 when the backslash is literal text."""
+    hashes = quote[len(quote.rstrip("#")):] if is_raw else ""
+    if not source.startswith("\\" + hashes, index):
+        return 0
+    after = index + 1 + len(hashes)
+    if source.startswith("(", after):
+        return after + 1 - index
+    return -(after + 1 - index) if is_raw else 0
+
+
 def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[int]:
     # `frames` is the lexical stack: ("quote", delimiter, is_raw) for an open
-    # string, ("expr", brace_depth) for a `${ ... }` inside a JS template.
-    # Code mode is the empty stack or an expr frame on top.
+    # string, ("expr", depth, opener, closer) for code inside a string: a JS
+    # or Kotlin `${ ... }`, a Swift `\( ... )`. Code mode is the empty stack
+    # or an expr frame on top.
     result: set[int] = set()
     frames: list[tuple] = []
     line = 1
@@ -302,14 +341,22 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
         if in_quote:
             _, quote, is_raw = top
             line_has_code = True
+            swift = 0
+            if suffix == ".swift" and char == "\\" and not escaped:
+                swift = _swift_interpolation(source, index, quote, is_raw)
             if escaped:
                 escaped = False
                 index += 1
+            elif swift > 0:
+                frames.append(("expr", 1, "(", ")"))
+                index += swift
+            elif swift < 0:
+                index -= swift
             elif char == "\\" and not is_raw:
                 escaped = True
                 index += 1
             elif quote in template and source.startswith("${", index):
-                frames.append(("expr", 1))
+                frames.append(("expr", 1, "{", "}"))
                 index += 2
             elif source.startswith(quote, index):
                 index += len(quote)
@@ -330,15 +377,15 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
             newline = source.find("\n", index)
             index = len(source) if newline == -1 else newline
             continue
-        if source.startswith("/*", index):
+        if profile["block"] and source.startswith("/*", index):
             line_has_comment = True
             block_depth = 1
             block_start_line = line
             index += 2
             continue
-        if top is not None and char in "{}":
-            depth = top[1] + (1 if char == "{" else -1)
-            frames[-1] = ("expr", depth)
+        if top is not None and char in (top[2], top[3]):
+            depth = top[1] + (1 if char == top[2] else -1)
+            frames[-1] = ("expr", depth, top[2], top[3])
             if depth == 0:
                 frames.pop()
             line_has_code = True
@@ -360,12 +407,15 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
         if suffix == ".swift" and char == "#":
             # Extended delimiters: `#"..."#`, `#"""..."""#`, `#/.../#`.
             # Backslashes are literal unless followed by the same `#` run.
-            raw_quote = re.match(r'(#+)("""|"|/)', source[index:])
-            if raw_quote:
-                line_has_code = True
-                frames.append(("quote", raw_quote.group(2) + raw_quote.group(1), True))
-                index += len(raw_quote.group(0))
-                continue
+            hashes = _HASHES.match(source, index).group(0)
+            opener = next((item for item in ('"""', '"', "/") if source.startswith(item, index + len(hashes))), None)
+            line_has_code = True
+            if opener:
+                frames.append(("quote", opener + hashes, True))
+                index += len(hashes) + len(opener)
+            else:
+                index += len(hashes)
+            continue
         matched = next((item for item in profile["raw"] if source.startswith(item, index)), None)
         if matched:
             line_has_code = True
@@ -386,6 +436,14 @@ def _slash_comment_only_lines(source: str, suffix: str, profile: dict) -> set[in
         result.add(line)
     if block_depth:
         result.difference_update(range(block_start_line, line + 1))
+    if profile["splice"]:
+        # A backslash before the newline joins the next line onto this one,
+        # so a `//` comment ending in `\` comments out the line below it.
+        # Neither line can be edited on its own.
+        for number, text in enumerate(source.split("\n"), 1):
+            if text.rstrip().endswith("\\"):
+                result.discard(number)
+                result.discard(number + 1)
     return result
 
 
@@ -398,6 +456,8 @@ def _replacement_is_safe(replacement: str, path: str) -> bool:
         bool(nonblank)
         and nonblank.issubset(comment_only_lines(replacement, path))
         and not any("/*" in line or "*/" in line for line in lines)
+        # The C preprocessor would join the next line onto this comment.
+        and not any(line.rstrip().endswith("\\") for line in lines)
         and not any(_DIRECTIVE.match(line.strip()) for line in lines)
     )
 
@@ -542,11 +602,16 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
     finding = {"path": path, "start_line": start, "end_line": end, "replacement": replacement, "rationale": rationale}
     if confidence != "high-confidence":
         return "borderline", finding
+    if "```" in replacement:
+        # A bare fence line would close the suggestion block early, and
+        # GitHub would apply only the lines above it.
+        return "note", finding
     root = source_root.resolve()
     candidate = (root / path).absolute()
     try:
+        # A symlink loop raises RuntimeError before 3.13.
         canonical = candidate.resolve()
-    except OSError:
+    except (OSError, RuntimeError):
         return "note", finding
     if root not in candidate.parents or canonical != candidate:
         return "note", finding
@@ -566,12 +631,21 @@ def _finding(raw: Any, changed: dict[str, dict[int, str]], source_root: Path) ->
         return "note", finding
     safe_lines = comment_only_lines(source, path)
     if all(line in safe_lines for line in range(start, end + 1)):
+        # Resizing a comment at the top of a Python file has the docstring
+        # hazard: a coding cookie is live only on lines 1-2.
+        moves_cookie = (
+            Path(path).suffix in _PYTHON_SUFFIXES
+            and start <= 2
+            and len(_split_lines(replacement)) != end - start + 1
+            and any(_DIRECTIVE.match(text.strip()) for text in source_lines[:3])
+        )
         safe = (
-            not any("/*" in line or "*/" in line for line in target_lines)
+            not moves_cookie
+            and not any("/*" in line or "*/" in line for line in target_lines)
             and not any(_DIRECTIVE.match(line.strip()) for line in target_lines)
             and _replacement_is_safe(replacement, path)
         )
-    elif Path(path).suffix.lower() in {".py", ".pyi"}:
+    elif Path(path).suffix in {".py", ".pyi"}:
         try:
             safe = _docstring_edit_is_safe(source, start, end, replacement)
         except (RecursionError, MemoryError):

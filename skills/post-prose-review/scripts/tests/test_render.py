@@ -370,6 +370,108 @@ class RenderTests(unittest.TestCase):
         self.assertEqual({2}, render.comment_only_lines(xcconfig, "Config/suno.xcconfig"))
         self.assertEqual({1}, render.comment_only_lines("// note\nexport {};\n", "a.mts"))
 
+    def test_division_after_brace_bang_or_line_start_fails_closed_on_quotes(self):
+        # `{} / 2`, TypeScript's `a! / 2`, and a line-leading `/` all read as
+        # a regex to a lexer without a parser; when the "regex" would swallow
+        # a quote the file yields nothing.
+        for source in (
+            'const x = {} / `a/` / `\n// inside template\n`;\n// real\n',
+            'const x = a! / `a/` / `\n// inside template\n`;\n// real\n',
+            'const x = a\n/ `a/` / `\n// inside template\n`;\n// real\n',
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("if (x) {} /re/.test(y);\n// real\n", "a.ts"))
+
+    def test_regex_scan_stops_at_a_continued_line(self):
+        # Regression: a `\` before the newline was stepped over as an escape,
+        # so the newline was never counted and every later line was off by one.
+        source = 'const a = {} / "x\\\ny/"; // "\nrun();\n// real\n'
+        self.assertEqual({4}, render.comment_only_lines(source, "a.ts"))
+
+    def test_swift_interpolation_is_code(self):
+        # Regression: `\(` was read as an escape, so a string inside the
+        # interpolation closed the outer literal and a `//` in it swallowed
+        # the rest of the line, including a `"""` opener.
+        source = 'let s = "\\("//")"; let t = """\n// inside string t\n"""\nprint(t)\n// real\n'
+        self.assertEqual({5}, render.comment_only_lines(source, "main.swift"))
+        self.assertEqual({2}, render.comment_only_lines('let s = "\\(f(a, (b)))"\n// real\n', "m.swift"))
+        # Extended delimiters interpolate with `\#(` and escape with `\#`.
+        raw = 'let s = #"\\#("//")"#; let t = """\n// in t\n"""\n// real\n'
+        self.assertEqual({4}, render.comment_only_lines(raw, "m.swift"))
+        self.assertEqual({4}, render.comment_only_lines('let s = #"\\#"// "#; let t = """\n// in t\n"""\n// real\n', "m.swift"))
+        self.assertEqual({2}, render.comment_only_lines('let s = #"\\("#\n// real\n', "m.swift"))
+        self.assertEqual({2}, render.comment_only_lines("let x = ####\n// real\n", "m.swift"))
+
+    def test_preprocessor_line_splice_is_not_editable(self):
+        # A `//` comment ending in `\` comments out the next line; deleting
+        # it would revive the code below, so neither line is comment-only.
+        shader = "fragment float4 f() {\n // disabled below \\\n discard_fragment();\n return float4(1);\n}\n"
+        for path in ("a.metal", "a.glsl"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines(shader, path))
+        self.assertEqual({3}, render.comment_only_lines(" // x \\ \n y();\n// real\n", "a.glsl"))
+        self.assertFalse(render._replacement_is_safe("// tighter \\", "a.metal"))
+
+    def test_xcconfig_has_no_block_comments(self):
+        source = "/*\nOTHER_LDFLAGS = $(inherited) -Wl,-foo\n*/\n// real\n"
+        self.assertEqual({4}, render.comment_only_lines(source, "a.xcconfig"))
+
+    def test_jsx_files_are_not_applyable(self):
+        # A JSX text child that starts with `//` is rendered text.
+        source = "export const A = () => (\n <p>\n // rendered text\n </p>\n);\n"
+        for path in ("a.tsx", "a.jsx"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines(source, path))
+
+    def test_docblock_interior_annotations_are_directives(self):
+        for text in (
+            " * @jsxImportSource preact", " * @jest-environment jsdom", "// @vitest-environment jsdom",
+            "// @jsx h", "/** @jsx h */", "// deno-fmt-ignore-file", "// Output: a",
+            "// +kubebuilder:validation:Optional", "// scalafmt: { maxColumn = 80 }",
+            "// $COVERAGE-OFF$", "// scalastyle:off",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(render._DIRECTIVE.match(text.strip()))
+        for text in (" * explains the why", "// plus one for the header", "// output of f is cached"):
+            with self.subTest(text=text):
+                self.assertFalse(render._DIRECTIVE.match(text.strip()))
+
+    def test_fence_in_docstring_replacement_downgrades(self):
+        # A bare ``` line would close the suggestion block early and GitHub
+        # would apply only the lines above it.
+        edit = finding(path="tool.py", start_line=5, end_line=8, replacement='    """Read.\n```\n    still docstring\n    """')
+        self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_symlink_loop_downgrades_instead_of_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "src" / "a.ts").symlink_to("a.ts")
+            with patch.object(render, "_source_head", return_value=COMMIT_ID):
+                review, diagnostics = render.render({"comment_findings": [finding()]}, DIFF, root, COMMIT_ID)
+        self.assertNotIn("```suggestion", review["comments"][0]["body"])
+        self.assertEqual(["downgraded finding 0 to a plain note"], diagnostics)
+
+    def test_comment_resize_cannot_move_a_coding_cookie(self):
+        # The comment path has the same hazard as a docstring: deleting two
+        # header lines lifts a line-3 cookie into effect, and growing line 1
+        # pushes a line-2 cookie out of it.
+        cases = (
+            ('# header\n# another\n# -*- coding: latin-1 -*-\nprint("\xe9")\n', 1, 2, ""),
+            ('# header\n# -*- coding: latin-1 -*-\nx = "caf\xe9"\n', 1, 1, "# header\n# more"),
+        )
+        for source, start, end, replacement in cases:
+            with self.subTest(source=source):
+                added = source.split("\n")[:end]
+                diff = (
+                    "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n"
+                    f"@@ -0,0 +1,{len(added)} @@\n" + "".join(f"+{line}\n" for line in added)
+                )
+                action = "delete" if not replacement else "tighten"
+                edit = finding(path="tool.py", start_line=start, end_line=end, replacement=replacement, action=action)
+                self.assertEqual("note", self.docstring_kind(edit, source, diff))
+
     def test_python_uses_the_real_tokenizer(self):
         # Nested same-quote f-strings are Python 3.12 syntax; older tokenizers
         # reject them and the file fails closed. Either way the string body on
