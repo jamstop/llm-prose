@@ -202,8 +202,10 @@ _SLASH_PROFILES = {
         "fail_on": None, "html": False,
     },
     # Apple localization tables: C-style comments around `"key" = "value";`.
+    # A value may legally span lines, but none in the repo does, so treating
+    # an open quote at end of line as lost sync costs nothing today.
     ".strings": {
-        "quotes": ('"',), "raw": (), "single_line": (),
+        "quotes": ('"',), "raw": (), "single_line": ('"',),
         "nested": False, "regex": False, "template": (), "block": True, "splice": False,
         "fail_on": None, "html": False,
     },
