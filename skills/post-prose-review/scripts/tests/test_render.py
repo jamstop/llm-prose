@@ -403,6 +403,56 @@ class RenderTests(unittest.TestCase):
         self.assertEqual({2}, render.comment_only_lines('let s = #"\\("#\n// real\n', "m.swift"))
         self.assertEqual({2}, render.comment_only_lines("let x = ####\n// real\n", "m.swift"))
 
+    def test_swift_raw_line_continuation_keeps_line_numbers(self):
+        # Regression: `\#` before a newline in a `#"""` string is a line
+        # continuation. The raw-escape path consumed the newline without
+        # counting it, so every later line was numbered one too low and
+        # `code()` was reported where `// c` really was.
+        source = 'func code() {}\nlet s = #"""\nabc\\#\ndef\\#\nghi\n"""#\ncode()\ncode()\n// c\n'
+        self.assertEqual({9}, render.comment_only_lines(source, "m.swift"))
+        self.assertEqual({2}, render.comment_only_lines('let s = #"a\\#"b"#\n// c\n', "m.swift"))
+        self.assertEqual(set(), render.comment_only_lines('let s = #"a\\#', "m.swift"))
+
+    def test_metal_has_string_literals(self):
+        # Regression: the shader profile declared Metal string-free, so a
+        # `/*` inside a string opened a block comment over a kernel body.
+        source = (
+            '#include <metal_stdlib>\nconstant char s[] = "/*";\n'
+            "kernel void k(device int *o [[buffer(0)]]) {\n o[0] = 42;\n}\n"
+            'constant char t[] = "*/";\n// real\n'
+        )
+        self.assertEqual({7}, render.comment_only_lines(source, "a.metal"))
+        self.assertEqual({2}, render.comment_only_lines("int c = '/'; // t\n// real\n", "a.metal"))
+        # C++ raw strings have delimiters the scanner does not model.
+        self.assertEqual(set(), render.comment_only_lines('constant char s[] = R"(x)";\n// real\n', "a.metal"))
+        # GLSL still has none, so a stray quote is not an opener.
+        self.assertEqual({2}, render.comment_only_lines('vec4 f() { return q"; }\n// real\n', "a.glsl"))
+
+    def test_html_like_comments_fail_javascript_closed(self):
+        # Annex B: `<!--` anywhere and `-->` at a line start are comments in
+        # scripts, so a `/*` after one is not a block opener. Only code
+        # position counts; the markers are common inside string literals.
+        for source in (
+            'x = 1 <!-- /*\ndanger();\ny = "*/";\n// real\n',
+            'x = 1;\n--> /*\ndanger();\ny = "*/";\n// real\n',
+            'x = 1;\n/* a */ --> /*\ndanger();\ny = "*/";\n// real\n',
+        ):
+            for path in ("a.js", "a.cjs", "a.mjs", "a.ts"):
+                with self.subTest(source=source, path=path):
+                    self.assertEqual(set(), render.comment_only_lines(source, path))
+        self.assertEqual({2}, render.comment_only_lines('const m = "<!-- bot -->";\n// real\n', "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("const f = () => x-->0;\n// real\n", "a.ts"))
+
+    def test_hashbang_line_is_code_and_hides_nothing(self):
+        # A `/*` on the interpreter line is part of the hashbang, not a
+        # block opener; the line itself is never an applyable edit.
+        source = '#!/usr/bin/env node /*\ndanger();\ny = "*/";\n// real\n'
+        for path in ("a.js", "a.mjs", "a.ts", "a.swift", "a.kts"):
+            with self.subTest(path=path):
+                self.assertEqual({4}, render.comment_only_lines(source, path))
+        self.assertEqual(set(), render.comment_only_lines("#!/usr/bin/env node", "a.js"))
+        self.assertEqual({3}, render.comment_only_lines("x\n#!/not/a/hashbang\n// real\n", "a.js"))
+
     def test_preprocessor_line_splice_is_not_editable(self):
         # A `//` comment ending in `\` comments out the next line; deleting
         # it would revive the code below, so neither line is comment-only.
@@ -412,6 +462,25 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual(set(), render.comment_only_lines(shader, path))
         self.assertEqual({3}, render.comment_only_lines(" // x \\ \n y();\n// real\n", "a.glsl"))
         self.assertFalse(render._replacement_is_safe("// tighter \\", "a.metal"))
+
+    def test_slash_scanner_fails_closed_on_foreign_line_terminators(self):
+        # `\r` ends a `//` comment in JS, Swift, Kotlin, and Go but not in
+        # git, so a comment can hide a string opener from the scanner.
+        source = "// note\rconst s = `\n// inside template\n`;\n// real\n"
+        self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual(set(), render.comment_only_lines("// a\u2028let s = \"\"\"\n// in\n\"\"\"\n", "a.swift"))
+
+    def test_unterminated_string_at_end_of_file_proves_nothing(self):
+        # An odd quote in a .strings table leaves the scanner in string mode
+        # with no single-line rule to trip; the whole file fails closed.
+        self.assertEqual(set(), render.comment_only_lines('// note\n"key" = "value;\n// later\n', "a.strings"))
+        self.assertEqual(set(), render.comment_only_lines('// note\nval s = """\n// later\n', "a.kt"))
+
+    def test_go_sys_and_lgtm_directives_need_their_exact_shape(self):
+        self.assertTrue(render._is_directive("//sys getpid() (pid int)"))
+        self.assertTrue(render._is_directive("// lgtm[js/xss]"))
+        self.assertFalse(render._is_directive("// sys.argv is read here"))
+        self.assertFalse(render._is_directive("// LGTM, ship it"))
 
     def test_xcconfig_has_no_block_comments(self):
         source = "/*\nOTHER_LDFLAGS = $(inherited) -Wl,-foo\n*/\n// real\n"
@@ -430,12 +499,31 @@ class RenderTests(unittest.TestCase):
             "// @jsx h", "/** @jsx h */", "// deno-fmt-ignore-file", "// Output: a",
             "// +kubebuilder:validation:Optional", "// scalafmt: { maxColumn = 80 }",
             "// $COVERAGE-OFF$", "// scalastyle:off",
+            # Block-comment ESLint forms, JSDoc tags `tsc --checkJs` reads,
+            # Go doc-tool conventions, and editor mode lines.
+            "/* global foo */", "/* exported foo */", "/* eslint-env node */",
+            " * @type {string}", " * @param {number} x", " * @returns {void}",
+            " * @typedef {Object} Foo", "/** @template T */",
+            "// Deprecated: use Bar", "// BUG(rsc): loses precision",
+            # `go test` matches the output marker in any case.
+            "// Unordered output:", "// output:", "// UNORDERED OUTPUT:",
+            "// format: off", "// nolint:errcheck",
+            "//goland:noinspection Foo", "/// sourcery: skipEquality",
+            "# vim: set ts=4:", "# -*- mode: python -*-", "# Local Variables:",
         ):
             with self.subTest(text=text):
-                self.assertTrue(render._DIRECTIVE.match(text.strip()))
-        for text in (" * explains the why", "// plus one for the header", "// output of f is cached"):
+                self.assertTrue(render._is_directive(text.strip()))
+        for text in (
+            " * explains the why", "// plus one for the header", "// output of f is cached",
+            # Prose that shares words with a case-sensitive Go marker.
+            "// +1 for the null terminator", "// deprecated in favour of the new path",
+            "// a global lock", "// exported for tests", "// bug in the parser",
+            # KDoc tags carry no `{type}`, so they are editable prose.
+            " * @param request the thing to send", " * @return the parsed body",
+            " * @throws IOException when the socket closes",
+        ):
             with self.subTest(text=text):
-                self.assertFalse(render._DIRECTIVE.match(text.strip()))
+                self.assertFalse(render._is_directive(text.strip()))
 
     def test_fence_in_docstring_replacement_downgrades(self):
         # A bare ``` line would close the suggestion block early and GitHub
