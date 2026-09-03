@@ -166,6 +166,382 @@ class RenderTests(unittest.TestCase):
         review, _ = self.run_render([hostile])
         self.assertEqual(1, review["comments"][0]["body"].count("```suggestion"))
 
+    def test_unknown_suffixes_fail_closed(self):
+        # Unknown suffixes used to fall through to the `//` profile, so a `//`
+        # line in Markdown, JSON, or Groovy could become a one-click edit.
+        for path in ("CLAUDE.md", "config.json", "settings.toml", "build.gradle", "App.m", "Makefile", "noext"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines("// comment\n", path))
+                self.assertEqual(set(), render.comment_only_lines("# comment\n", path))
+        self.assertEqual({1}, render.comment_only_lines("// comment\n", "build.gradle.kts"))
+
+    def run_render_file(self, path, source_bytes, diff, findings):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_bytes(source_bytes)
+            with patch.object(render, "_source_head", return_value=COMMIT_ID):
+                return render.render({"comment_findings": findings}, diff, root, COMMIT_ID)
+
+    @staticmethod
+    def whole_file_diff(path, source):
+        lines = _split(source)
+        return (
+            f"diff --git a/{path} b/{path}\n--- /dev/null\n+++ b/{path}\n"
+            f"@@ -0,0 +1,{len(lines)} @@\n" + "".join(f"+{line}\n" for line in lines)
+        )
+
+    PY_SOURCE = (
+        "import os\n\n\ndef load(path):\n"
+        '    """Read the config.\n\n    Returns the parsed mapping.\n    """\n'
+        "    return os.environ.get(path)\n"
+    )
+    # Only the docstring lines are added; the surrounding function is not in the diff.
+    PY_DIFF = (
+        "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n@@ -4,4 +4,8 @@\n"
+        ' def load(path):\n+    """Read the config.\n+\n+    Returns the parsed mapping.\n+    """\n'
+        " return os.environ.get(path)\n"
+    )
+
+    def docstring_kind(self, edit, source=None, diff=None):
+        source = self.PY_SOURCE if source is None else source
+        diff = self.PY_DIFF if diff is None else diff
+        review, diagnostics = self.run_render_file("tool.py", source.encode(), diff, [edit])
+        self.assertEqual(1, len(review["comments"]))
+        return "suggestion" if "```suggestion" in review["comments"][0]["body"] else "note"
+
+    def test_docstring_rewrite_and_delete_are_applyable(self):
+        edit = finding(path="tool.py", start_line=5, end_line=8, replacement='    """Read the config as a mapping."""')
+        self.assertEqual("suggestion", self.docstring_kind(edit))
+        delete = finding(path="tool.py", start_line=5, end_line=8, action="delete", replacement="")
+        self.assertEqual("suggestion", self.docstring_kind(delete))
+        module = '"""Tooling.\n\nHelpers for the build.\n"""\nimport os\n'
+        edit = finding(path="tool.py", start_line=1, end_line=4, replacement='"""Build helpers."""')
+        self.assertEqual("suggestion", self.docstring_kind(edit, module, self.whole_file_diff("tool.py", module)))
+
+    def test_docstring_delete_needs_a_remaining_body(self):
+        source = 'def load(path):\n    """Read the config.\n    """\n'
+        delete = finding(path="tool.py", start_line=2, end_line=3, action="delete", replacement="")
+        self.assertEqual("note", self.docstring_kind(delete, source, self.whole_file_diff("tool.py", source)))
+
+    def test_docstring_replacement_cannot_change_code(self):
+        for replacement in (
+            '    """Read."""\n    os.system("id")',
+            '    """Read."""; os.system("id")',
+            '    f"""Read {os.environ}."""',
+            '    b"""Read."""',
+            '    """Read.""" + os.environ["X"]',
+            '"""Read."""',
+            '        """Read."""',
+            '    """Read.',
+            '    """Read.\n\n    >>> os.system("id")\n    """',
+            '    """Read.\n\n    .. include:: /etc/passwd\n    """',
+            '    """Read.\n\n    .. testcode::\n\n       os.system("id")\n    """',
+        ):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_docstring_range_and_shape_must_be_exact(self):
+        diff = self.whole_file_diff("tool.py", self.PY_SOURCE)
+        for start, end in ((5, 7), (6, 8), (5, 9), (4, 8)):
+            with self.subTest(start=start, end=end):
+                edit = finding(path="tool.py", start_line=start, end_line=end, replacement='    """Read."""')
+                self.assertEqual("note", self.docstring_kind(edit, self.PY_SOURCE, diff))
+        for source in (
+            'def load(path):\n    text = """Read the config.\n    """\n    return text\n',
+            'def load(path):\n    x = 1\n    """Read the config.\n    """\n    return x\n',
+            'def load(path):\n    """Read the config.\n    """; x = 1\n    return x\n',
+            'def load(path):\n    """Read the config.\n    ééééé"""; x = 1\n    return x\n',
+        ):
+            with self.subTest(source=source):
+                start = next(i for i, line in enumerate(_split(source), 1) if "Read the config" in line)
+                edit = finding(path="tool.py", start_line=start, end_line=start + 1, replacement='    """Read."""')
+                self.assertEqual("note", self.docstring_kind(edit, source, self.whole_file_diff("tool.py", source)))
+
+    def test_lone_carriage_return_cannot_hide_code(self):
+        # git and GitHub break lines on \n only, so each file here is one line.
+        # The parser (and str.splitlines) break on \r too, so a proof on "line
+        # 1" would let a one-click edit delete the code after the \r.
+        edit = finding(path="tool.py", start_line=1, end_line=1, replacement='"""New."""')
+        diff = 'diff --git a/tool.py b/tool.py\n--- /dev/null\n+++ b/tool.py\n@@ -0,0 +1 @@\n+"""Old."""\rverify(request)\n'
+        self.assertEqual("note", self.docstring_kind(edit, '"""Old."""\rverify(request)\n', diff))
+        diff = "diff --git a/src/a.ts b/src/a.ts\n--- /dev/null\n+++ b/src/a.ts\n@@ -0,0 +1 @@\n+// note\rrun();\n"
+        delete = finding(start_line=1, end_line=1, action="delete", replacement="")
+        review, _ = self.run_render_file("src/a.ts", b"// note\rrun();\n", diff, [delete])
+        self.assertNotIn("```suggestion", review["comments"][0]["body"])
+
+    def test_added_text_breaks_lines_only_on_newline(self):
+        diff = "diff --git a/src/a.ts b/src/a.ts\n--- /dev/null\n+++ b/src/a.ts\n@@ -0,0 +1,2 @@\n+// one\rrun();\n+// two\u2028run();\n"
+        self.assertEqual({"src/a.ts": {1: "// one\rrun();", 2: "// two\u2028run();"}}, render.added_text(diff))
+
+    def test_replacement_cannot_smuggle_a_line_terminator(self):
+        for terminator in ("\r", "\u2028", "\u2029", "\x85", "\x0c", "\x0b"):
+            with self.subTest(terminator=repr(terminator)):
+                review, _ = self.run_render([finding(replacement=f"// useful reason{terminator}exfiltrate();")])
+                self.assertNotIn("```suggestion", review["comments"][0]["body"])
+
+    def test_non_utf8_file_does_not_fail_the_review(self):
+        raw = b'x = "caf\xe9"\n# as requested\n'
+        text = raw.decode("utf-8", "surrogateescape")
+        diff = "diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n" + "".join(
+            f"+{line}\n" for line in _split(text)
+        )
+        clean = finding(path="a.py", start_line=2, end_line=2, action="delete", replacement="")
+        dirty = finding(path="a.py", start_line=1, end_line=1, action="delete", replacement="")
+        review, _ = self.run_render_file("a.py", raw, diff, [clean, dirty])
+        bodies = [comment["body"] for comment in review["comments"]]
+        self.assertEqual(2, len(bodies))
+        self.assertIn("```suggestion", bodies[0])
+        self.assertNotIn("```suggestion", bodies[1])
+
+    def test_replacement_cannot_carry_hidden_characters(self):
+        # bidi overrides, zero-width, BOM, Arabic letter mark, a Unicode tag
+        # (ASCII smuggling), C0/C1 controls, private use, unassigned.
+        for control in (
+            "\u202e", "\u200b", "\u2066", "\ufeff", "\u2060", "\u061c",
+            "\U000E0041", "\x1b", "\x7f", "\x9f", "\U000F0000", "\U000E0080",
+        ):
+            with self.subTest(control=repr(control)):
+                review, _ = self.run_render([finding(replacement=f"// useful{control} reason")])
+                self.assertNotIn("```suggestion", review["comments"][0]["body"])
+        review, _ = self.run_render([finding(replacement="// raison utile — c'est important")])
+        self.assertIn("```suggestion", review["comments"][0]["body"])
+
+    def test_replacement_trailing_newline_is_not_an_extra_blank_line(self):
+        review, _ = self.run_render([finding(replacement="// useful reason\n")])
+        self.assertTrue(review["comments"][0]["body"].endswith("```suggestion\n// useful reason\n```"))
+
+    def test_string_literal_content_is_never_comment_only(self):
+        # Regression: escape processing inside raw literals, first-three-quote
+        # closing for Kotlin, and unknown JS regexes each flipped quote state so
+        # the next string's body scanned as code and its `//` line became a
+        # one-click target.
+        cases = (
+            ("a.go", "var a = `C:\\`\nvar b = `\n// inside raw string b\n`\n// real\n", 5),
+            ("a.kt", 'val a = """C:\\"""\nval b = """\n// inside raw string b\n"""\n// real\n', 5),
+            ("a.kt", 'val a = """say "hi""""\nval b = """\n// inside raw string b\n"""\n// real\n', 5),
+            ("a.kt", 'fun `has a " quote`() {}\nval b = "x"\n// real\n', 3),
+            ("a.ts", 's.replace(/"/g, "&quot;");\nconst t = `\n// inside template\n`;\n// real\n', 5),
+            ("a.swift", 'let a = #"C:\\"#\nlet b = """\n// inside string b\n"""\n// real\n', 5),
+        )
+        for path, source, real in cases:
+            with self.subTest(path=path):
+                self.assertEqual({real}, render.comment_only_lines(source, path))
+
+    def test_ambiguous_javascript_slash_fails_closed(self):
+        # After `)` only a parser knows regex from division; when the two
+        # readings disagree about quotes, nothing in the file is applyable.
+        for source in ('const r = (a) / "b" / c;\n// note\n', 'if (x) /"/.test(y);\n// note\n'):
+            with self.subTest(source=source):
+                self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("const r = (a) / b / c;\n// note\n", "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines('return /"/.test(y);\n// note\n', "a.ts"))
+
+    def test_template_expressions_are_code(self):
+        # Regression: a nested template closed the outer one and the scanner
+        # stayed desynced for the rest of the file.
+        source = (
+            "const s = `\n  ${a ? `//x` : `y`}\n  // still inside the template\n"
+            "  ${b ? ` as \\`${c}\\`` : \"\"}\n`;\n// real\n"
+        )
+        self.assertEqual({6}, render.comment_only_lines(source, "a.ts"))
+        kotlin = (
+            'val s = "seeking ${\n    position // inside expression\n}"\n// real\n'
+            'val t = """\n// inside raw ${x}\n"""\n// also real\n'
+        )
+        self.assertEqual({4, 8}, render.comment_only_lines(kotlin, "a.kt"))
+
+    def test_unclosed_single_line_string_fails_the_file_closed(self):
+        jsx = "export const A = () => (\n  <p>Don't do that</p>\n);\n// real\n"
+        self.assertEqual(set(), render.comment_only_lines(jsx, "a.tsx"))
+        self.assertEqual(set(), render.comment_only_lines('val a = "open\n// real\n', "a.kt"))
+        self.assertEqual({3}, render.comment_only_lines("const a = 'x\\\n';\n// real\n", "a.ts"))
+
+    def test_division_before_a_comment_is_not_a_regex(self):
+        self.assertEqual({2}, render.comment_only_lines("x = i++ / 2; // it's\n// real\n", "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("x = (a) / 2; // it's\n// real\n", "a.ts"))
+
+    def test_grammars_without_string_literals(self):
+        shader = '// the "paused" treatment\nfloat4 c = tex.sample(s, uv); // gamma\n'
+        for path in ("Waveform.metal", "aura.glsl"):
+            self.assertEqual({1}, render.comment_only_lines(shader, path))
+        xcconfig = '#include "base.xcconfig"\n// "Designed for iPad"\nURL = https:/$()/x.com // c\n'
+        self.assertEqual({2}, render.comment_only_lines(xcconfig, "Config/suno.xcconfig"))
+        self.assertEqual({1}, render.comment_only_lines("// note\nexport {};\n", "a.mts"))
+
+    def test_division_after_brace_bang_or_line_start_fails_closed_on_quotes(self):
+        # `{} / 2`, TypeScript's `a! / 2`, and a line-leading `/` all read as
+        # a regex to a lexer without a parser; when the "regex" would swallow
+        # a quote the file yields nothing.
+        for source in (
+            'const x = {} / `a/` / `\n// inside template\n`;\n// real\n',
+            'const x = a! / `a/` / `\n// inside template\n`;\n// real\n',
+            'const x = a\n/ `a/` / `\n// inside template\n`;\n// real\n',
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(set(), render.comment_only_lines(source, "a.ts"))
+        self.assertEqual({2}, render.comment_only_lines("if (x) {} /re/.test(y);\n// real\n", "a.ts"))
+
+    def test_regex_scan_stops_at_a_continued_line(self):
+        # Regression: a `\` before the newline was stepped over as an escape,
+        # so the newline was never counted and every later line was off by one.
+        source = 'const a = {} / "x\\\ny/"; // "\nrun();\n// real\n'
+        self.assertEqual({4}, render.comment_only_lines(source, "a.ts"))
+
+    def test_swift_interpolation_is_code(self):
+        # Regression: `\(` was read as an escape, so a string inside the
+        # interpolation closed the outer literal and a `//` in it swallowed
+        # the rest of the line, including a `"""` opener.
+        source = 'let s = "\\("//")"; let t = """\n// inside string t\n"""\nprint(t)\n// real\n'
+        self.assertEqual({5}, render.comment_only_lines(source, "main.swift"))
+        self.assertEqual({2}, render.comment_only_lines('let s = "\\(f(a, (b)))"\n// real\n', "m.swift"))
+        # Extended delimiters interpolate with `\#(` and escape with `\#`.
+        raw = 'let s = #"\\#("//")"#; let t = """\n// in t\n"""\n// real\n'
+        self.assertEqual({4}, render.comment_only_lines(raw, "m.swift"))
+        self.assertEqual({4}, render.comment_only_lines('let s = #"\\#"// "#; let t = """\n// in t\n"""\n// real\n', "m.swift"))
+        self.assertEqual({2}, render.comment_only_lines('let s = #"\\("#\n// real\n', "m.swift"))
+        self.assertEqual({2}, render.comment_only_lines("let x = ####\n// real\n", "m.swift"))
+
+    def test_preprocessor_line_splice_is_not_editable(self):
+        # A `//` comment ending in `\` comments out the next line; deleting
+        # it would revive the code below, so neither line is comment-only.
+        shader = "fragment float4 f() {\n // disabled below \\\n discard_fragment();\n return float4(1);\n}\n"
+        for path in ("a.metal", "a.glsl"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines(shader, path))
+        self.assertEqual({3}, render.comment_only_lines(" // x \\ \n y();\n// real\n", "a.glsl"))
+        self.assertFalse(render._replacement_is_safe("// tighter \\", "a.metal"))
+
+    def test_xcconfig_has_no_block_comments(self):
+        source = "/*\nOTHER_LDFLAGS = $(inherited) -Wl,-foo\n*/\n// real\n"
+        self.assertEqual({4}, render.comment_only_lines(source, "a.xcconfig"))
+
+    def test_jsx_files_are_not_applyable(self):
+        # A JSX text child that starts with `//` is rendered text.
+        source = "export const A = () => (\n <p>\n // rendered text\n </p>\n);\n"
+        for path in ("a.tsx", "a.jsx"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), render.comment_only_lines(source, path))
+
+    def test_docblock_interior_annotations_are_directives(self):
+        for text in (
+            " * @jsxImportSource preact", " * @jest-environment jsdom", "// @vitest-environment jsdom",
+            "// @jsx h", "/** @jsx h */", "// deno-fmt-ignore-file", "// Output: a",
+            "// +kubebuilder:validation:Optional", "// scalafmt: { maxColumn = 80 }",
+            "// $COVERAGE-OFF$", "// scalastyle:off",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(render._DIRECTIVE.match(text.strip()))
+        for text in (" * explains the why", "// plus one for the header", "// output of f is cached"):
+            with self.subTest(text=text):
+                self.assertFalse(render._DIRECTIVE.match(text.strip()))
+
+    def test_fence_in_docstring_replacement_downgrades(self):
+        # A bare ``` line would close the suggestion block early and GitHub
+        # would apply only the lines above it.
+        edit = finding(path="tool.py", start_line=5, end_line=8, replacement='    """Read.\n```\n    still docstring\n    """')
+        self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_symlink_loop_downgrades_instead_of_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "src" / "a.ts").symlink_to("a.ts")
+            with patch.object(render, "_source_head", return_value=COMMIT_ID):
+                review, diagnostics = render.render({"comment_findings": [finding()]}, DIFF, root, COMMIT_ID)
+        self.assertNotIn("```suggestion", review["comments"][0]["body"])
+        self.assertEqual(["downgraded finding 0 to a plain note"], diagnostics)
+
+    def test_comment_resize_cannot_move_a_coding_cookie(self):
+        # The comment path has the same hazard as a docstring: deleting two
+        # header lines lifts a line-3 cookie into effect, and growing line 1
+        # pushes a line-2 cookie out of it.
+        cases = (
+            ('# header\n# another\n# -*- coding: latin-1 -*-\nprint("\xe9")\n', 1, 2, ""),
+            ('# header\n# -*- coding: latin-1 -*-\nx = "caf\xe9"\n', 1, 1, "# header\n# more"),
+        )
+        for source, start, end, replacement in cases:
+            with self.subTest(source=source):
+                added = source.split("\n")[:end]
+                diff = (
+                    "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n"
+                    f"@@ -0,0 +1,{len(added)} @@\n" + "".join(f"+{line}\n" for line in added)
+                )
+                action = "delete" if not replacement else "tighten"
+                edit = finding(path="tool.py", start_line=start, end_line=end, replacement=replacement, action=action)
+                self.assertEqual("note", self.docstring_kind(edit, source, diff))
+
+    def test_python_uses_the_real_tokenizer(self):
+        # Nested same-quote f-strings are Python 3.12 syntax; older tokenizers
+        # reject them and the file fails closed. Either way the string body on
+        # line 3 is never comment-only.
+        nested = 'x = f"{"\\""}"\ny = """\n# inside string y\n"""\n# real\n'
+        self.assertNotIn(3, render.comment_only_lines(nested, "a.py"))
+        self.assertEqual({4}, render.comment_only_lines('x = """\n# inside\n"""\n# real\n', "a.py"))
+        self.assertEqual({1}, render.comment_only_lines('# real\nx = "a\\\n# continued"\n', "a.py"))
+        self.assertEqual(set(), render.comment_only_lines('x = "unterminated\n# looks real\n', "a.py"))
+
+    def test_docstring_replacement_cannot_trail_a_directive(self):
+        for replacement in ('    """Read."""  # type: ignore', '    """Read."""  # noqa', '    """Read."""  # pragma: no cover'):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_docstring_resize_cannot_move_a_coding_cookie(self):
+        source = '"""m\n"""\n# -*- coding: latin-1 -*-\nx = "caf\xe9"\n'
+        diff = (
+            "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n"
+            '@@ -0,0 +1,2 @@\n+"""m\n+"""\n # -*- coding: latin-1 -*-\n x = "caf\xe9"\n'
+        )
+        edit = finding(path="tool.py", start_line=1, end_line=2, replacement='"""n"""')
+        self.assertEqual("note", self.docstring_kind(edit, source, diff))
+
+    def test_docstring_replacement_cannot_add_any_rest_directive(self):
+        for replacement in (
+            '    """Read.\n\n    .. include :: /etc/passwd\n    """',
+            '    """Read.\n\n    .. ifconfig:: __import__("os").system("id")\n    """',
+            '    """Read.\n\n    .. csv-table::\n       :file: /etc/passwd\n    """',
+        ):
+            with self.subTest(replacement=replacement):
+                edit = finding(path="tool.py", start_line=5, end_line=8, replacement=replacement)
+                self.assertEqual("note", self.docstring_kind(edit))
+
+    def test_wider_directive_coverage(self):
+        for replacement, path in (
+            ("# nosec", "a.py"), ("# nosemgrep: rule-id", "a.py"), ("# pyre-ignore[16]", "a.py"),
+            ("# yapf: disable", "a.py"), ("// c8 ignore next", "a.ts"), ("/* v8 ignore next */", "a.ts"),
+            ("// tslint:disable", "a.ts"), ("// deno-lint-ignore no-explicit-any", "a.ts"),
+            ("// @refresh reset", "a.tsx"), ("// @generated", "a.ts"), ("// NOSONAR", "a.kt"),
+            ("// codeql[js/xss]", "a.ts"), ("// ktlint-disable no-wildcard-imports", "a.kt"),
+            ("// @formatter:off", "a.kt"), ("// $COVERAGE-IGNORE$", "a.kt"),
+            ("// sourcery: AutoMockable", "a.swift"), ("// periphery:ignore", "a.swift"),
+            ("//lint:ignore SA1019 reason", "a.go"), ("//sys getpid() (pid int)", "a.go"),
+            ("// #nosec G104", "a.go"), ("//nosec", "a.go"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertFalse(render._replacement_is_safe(replacement, path))
+        for replacement, path in (
+            ("// keep the socket open until the ack arrives", "a.ts"),
+            ("# keep going after a transient error", "a.py"),
+            ("// system calls are retried once", "a.go"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertTrue(render._replacement_is_safe(replacement, path))
+
+    def test_pathological_source_downgrades_instead_of_crashing(self):
+        deep = 'def load(path):\n    """Read."""\n    return ' + "not " * 60000 + "path\n"
+        diff = 'diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n@@ -1,1 +1,2 @@\n def load(path):\n+    """Read."""\n'
+        edit = finding(path="tool.py", start_line=2, end_line=2, replacement='    """Load."""')
+        self.assertEqual("note", self.docstring_kind(edit, deep, diff))
+
+
+def _split(text):
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
 
 if __name__ == "__main__":
     unittest.main()
